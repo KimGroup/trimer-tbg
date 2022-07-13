@@ -1,5 +1,5 @@
 (function () {
-	const colors = ["#35a962", "#b58716", "#fb3e3c", "#f41cc8", "#b46df1", "#379be7"];
+	const colors = ["#4dab2f", "#decd2b", "#f78026", "#fd58f7", "#9c78fa", "#4db2f1"];
 
 	type Coord = [number, number];
 
@@ -9,7 +9,7 @@
 	const ctx = canvas.getContext("2d")!;
 
 	ctx.transform(1, 0, 0, -1, Math.round(canvas.width / 2), Math.round(canvas.height / 2));
-	const a = 30;
+	const a = 40;
 
 	function indexToHexCenter([i, j]: Coord): Coord {
 		return [i * a * 1.5, j * a * Math.sqrt(3) + (i * a * Math.sqrt(3)) / 2];
@@ -27,21 +27,6 @@
 	const trimers = new Map<string, number>();
 
 	function drawLattice() {
-		ctx.beginPath();
-		for (let i = -10; i < 10; i++) {
-			for (let j = -10; j < 10; j++) {
-				let [sx, sy] = indexToHexCenter([i, j]);
-				sx -= a / 2;
-				sy -= (a * Math.sqrt(3)) / 2;
-				ctx.moveTo(sx - a / 2, sy + (a * Math.sqrt(3)) / 2);
-				ctx.lineTo(sx, sy);
-				ctx.lineTo(sx + a, sy);
-				ctx.lineTo(sx + (a * 3) / 2, sy + (a * Math.sqrt(3)) / 2);
-			}
-		}
-		ctx.strokeStyle = "#999999";
-		ctx.stroke();
-
 		for (const pair of trimers) {
 			const tokens = pair[0].slice(0, pair[0].length - 1).split(".");
 			const xy = indexToRhombusCorner([parseInt(tokens[0]), parseInt(tokens[1])]);
@@ -58,6 +43,63 @@
 			ctx.fillStyle = colors[pair[1] - 1];
 			ctx.fill();
 		}
+
+		ctx.beginPath();
+		for (let i = -10; i < 10; i++) {
+			for (let j = -10; j < 10; j++) {
+				let [sx, sy] = indexToHexCenter([i, j]);
+				sx -= a / 2;
+				sy -= (a * Math.sqrt(3)) / 2;
+				ctx.moveTo(sx - a / 2, sy + (a * Math.sqrt(3)) / 2);
+				ctx.lineTo(sx, sy);
+				ctx.lineTo(sx + a, sy);
+				ctx.lineTo(sx + (a * 3) / 2, sy + (a * Math.sqrt(3)) / 2);
+
+				for (let k = 0; k < 6; k++) {
+					ctx.moveTo(sx + a / 2, sy + (a * Math.sqrt(3)) / 2);
+					ctx.lineTo(
+						sx + a / 2 + a * Math.cos((k * Math.PI) / 3),
+						sy + (a * Math.sqrt(3)) / 2 + a * Math.sin((k * Math.PI) / 3),
+					);
+				}
+			}
+		}
+
+		ctx.strokeStyle = "#0000bb";
+		ctx.stroke();
+
+		ctx.beginPath();
+		for (let i = -10; i < 10; i++) {
+			for (let j = -10; j < 10; j++) {
+				let [sx, sy] = indexToHexCenter([i, j]);
+				sx -= a / 2;
+				sy -= (a * Math.sqrt(3)) / 2;
+				const innerd = a * (Math.sqrt(3) / 2 - 1 / Math.sqrt(3) / 2);
+				for (let k = 0; k < 6; k++) {
+					let [x, y] = [
+						sx + a / 2 + innerd * Math.cos((k * Math.PI) / 3 + Math.PI / 6),
+						sy + (a * Math.sqrt(3)) / 2 + innerd * Math.sin((k * Math.PI) / 3 + Math.PI / 6),
+					];
+					if (k == 0) ctx.moveTo(x, y);
+					else ctx.lineTo(x, y);
+				}
+				ctx.closePath();
+
+				for (let k = 0; k < 3; k++) {
+					let [x, y] = [
+						sx + a / 2 + innerd * Math.cos((k * Math.PI) / 3 + Math.PI / 6),
+						sy + (a * Math.sqrt(3)) / 2 + innerd * Math.sin((k * Math.PI) / 3 + Math.PI / 6),
+					];
+					ctx.moveTo(x, y);
+					ctx.lineTo(
+						x + (a / Math.sqrt(3)) * Math.cos((k * Math.PI) / 3 + Math.PI / 6),
+						y + (a / Math.sqrt(3)) * Math.sin((k * Math.PI) / 3 + Math.PI / 6),
+					);
+				}
+			}
+		}
+		ctx.strokeStyle = "#bb0000";
+		ctx.stroke();
 	}
 
 	function locateMouseClick(e: MouseEvent) {
@@ -98,12 +140,12 @@
 
 		const base = [index[0] * 2 + index[1] - 1, index[0] + index[1] * 2 - 1];
 		const tris = [
+			`${base[0]}.${base[1] + 1}-`,
 			`${base[0] + 1}.${base[1] + 1}+`,
 			`${base[0] + 1}.${base[1] + 1}-`,
 			`${base[0] + 1}.${base[1]}+`,
 			`${base[0]}.${base[1]}-`,
 			`${base[0]}.${base[1]}+`,
-			`${base[0]}.${base[1] + 1}-`,
 		];
 		for (let i = 0; i < 6; i++) {
 			if (domain !== undefined && i === domain - 1) {
