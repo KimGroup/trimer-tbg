@@ -4,8 +4,10 @@
 	type Coord = [number, number];
 
 	const canvas: HTMLCanvasElement = document.getElementById("c") as HTMLCanvasElement;
-	canvas.width = window.innerWidth;
-	canvas.height = window.innerHeight;
+	// canvas.width = window.innerWidth;
+	// canvas.height = window.innerHeight;
+	canvas.width = 400;
+	canvas.height = 250;
 	const ctx = canvas.getContext("2d")!;
 
 	ctx.transform(1, 0, 0, -1, Math.round(canvas.width / 2), Math.round(canvas.height / 2));
