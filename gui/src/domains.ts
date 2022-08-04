@@ -67,7 +67,8 @@
 			}
 		}
 
-		ctx.strokeStyle = "#0000bb";
+		ctx.setLineDash([2, 2]);
+		ctx.strokeStyle = "black";
 		ctx.stroke();
 
 		ctx.beginPath();
@@ -100,7 +101,8 @@
 				}
 			}
 		}
-		ctx.strokeStyle = "#bb0000";
+		ctx.setLineDash([]);
+		ctx.strokeStyle = "black";
 		ctx.stroke();
 	}
 
