@@ -6,12 +6,12 @@
 	const canvas: HTMLCanvasElement = document.getElementById("c") as HTMLCanvasElement;
 	// canvas.width = window.innerWidth;
 	// canvas.height = window.innerHeight;
-	canvas.width = 400;
-	canvas.height = 250;
+	canvas.width = 1000;
+	canvas.height = 500;
 	const ctx = canvas.getContext("2d")!;
 
 	ctx.transform(1, 0, 0, -1, Math.round(canvas.width / 2), Math.round(canvas.height / 2));
-	const a = 40;
+	const a = 80;
 
 	function indexToHexCenter([i, j]: Coord): Coord {
 		return [i * a * 1.5, j * a * Math.sqrt(3) + (i * a * Math.sqrt(3)) / 2];

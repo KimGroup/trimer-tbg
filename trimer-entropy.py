@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import scipy.integrate
 import scipy.integrate as si
 
+
 def get(b):
     def t(z, c):
         """
@@ -26,6 +27,7 @@ def get(b):
 
     def fl(z):
         return (t(z, 1) + 1/t(z, 1)) / z
+
     def fr(z):
         return (t(z, -1) + 1/t(z, -1)) / z
 
@@ -39,6 +41,7 @@ def get(b):
     def imfl(z):
         return np.imag(fl(np.real(bl) + np.imag(bl) * np.exp(1j * z)) * np.imag(bl) * 1j * np.exp(1j * z))
     # mirror
+
     def imfr(z):
         return np.imag(fr(np.real(br) + np.imag(br) * np.exp(1j * z)) * np.imag(br) * 1j * np.exp(1j * z))
 
@@ -49,9 +52,10 @@ def get(b):
     # semicircular path above both branch cuts
     def refl(z):
         return np.real(fl(1j * np.imag(bl) + np.real(bl) * np.exp(1j * z)) * np.real(bl) * 1j * np.exp(1j * z))
+
     def refr(z):
         return np.real(fr(1j * np.imag(br) + -np.real(br) * np.exp(1j * z)) * -np.real(br) * 1j * np.exp(1j * z))
-    
+
     phi_l = 1 / 2 * si.quad(refl, 0, np.pi)[0]
     phi_r = 1 / 2 * si.quad(refr, np.pi, 0)[0]
 
@@ -60,11 +64,14 @@ def get(b):
 
     def flm1(z):
         return (t(z, 1) + 1/t(z, 1) - 1) / z
+
     def frm1(z):
         return (t(z, -1) + 1/t(z, -1) - 1) / z
     # vertical path to complex infinity
+
     def reflm1_o(z):
         return np.real(flm1(1j*z) * 1j)
+
     def refrm1_o(z):
         return np.real(frm1(1j*z) * 1j)
 
@@ -75,17 +82,24 @@ def get(b):
     dPhi_dphil = 1/6 * (-rho_l + 2 * rho_r)
     dPhi_dphir = 1/6 * (2 * rho_l - rho_r)
 
-    rho_0 = (-3/2 + 1/2 * rho_r) * dPhi_dphil + (-3/2 + 1/2 * rho_l) * dPhi_dphir - 1/4 * rho_l - 1/4 * rho_r + 1
-    rho_1 = (1/2 - 1/2 * rho_r) * dPhi_dphil + (3/2 - 1/2 * rho_l) * dPhi_dphir - 1/4 * rho_l + 1/4 * rho_r
-    rho_2 = (1/2 + 1/2 * rho_r) * dPhi_dphil + (-1/2 + 1/2 * rho_l) * dPhi_dphir - 1/4 * rho_l + 1/4 * rho_r
+    rho_0 = (-3/2 + 1/2 * rho_r) * dPhi_dphil + (-3/2 + 1/2 *
+                                                 rho_l) * dPhi_dphir - 1/4 * rho_l - 1/4 * rho_r + 1
+    rho_1 = (1/2 - 1/2 * rho_r) * dPhi_dphil + (3/2 - 1/2 * rho_l) * \
+        dPhi_dphir - 1/4 * rho_l + 1/4 * rho_r
+    rho_2 = (1/2 + 1/2 * rho_r) * dPhi_dphil + (-1/2 + 1/2 *
+                                                rho_l) * dPhi_dphir - 1/4 * rho_l + 1/4 * rho_r
 
-    rho_3 = (-1/2 - 1/2 * rho_r) * dPhi_dphil + (-1/2 - 1/2 * rho_l) * dPhi_dphir + 1/4 * rho_l + 1/4 * rho_r
-    rho_4 = (-1/2 + 1/2 * rho_r) * dPhi_dphil + (1/2 + 1/2 * rho_l) * dPhi_dphir + 1/4 * rho_l - 1/4 * rho_r
-    rho_5 = (3/2 - 1/2 * rho_r) * dPhi_dphil + (1/2 - 1/2 * rho_l) * dPhi_dphir + 1/4 * rho_l - 1/4 * rho_r
+    rho_3 = (-1/2 - 1/2 * rho_r) * dPhi_dphil + (-1/2 - 1/2 *
+                                                 rho_l) * dPhi_dphir + 1/4 * rho_l + 1/4 * rho_r
+    rho_4 = (-1/2 + 1/2 * rho_r) * dPhi_dphil + (1/2 + 1/2 *
+                                                 rho_l) * dPhi_dphir + 1/4 * rho_l - 1/4 * rho_r
+    rho_5 = (3/2 - 1/2 * rho_r) * dPhi_dphil + (1/2 - 1/2 * rho_l) * \
+        dPhi_dphir + 1/4 * rho_l - 1/4 * rho_r
 
     S = sigma_l + sigma_r + dPhi_dphil * phi_l + dPhi_dphir * phi_r
 
     return (rho_1 + rho_3 + rho_5, S)
+
 
 p = []
 s = []
@@ -99,7 +113,7 @@ p, s = np.array(p), np.array(s)
 # symmetry of up/down
 plt.subplots(1, 1, figsize=[3, 2])
 plt.plot(np.concatenate((p, 1-p[::-1])), np.concatenate((s, s[::-1])))
-plt.xlabel("$\\rho_{up}$")
+plt.xlabel("$\\rho_{AB}=\\frac{n_{AB}}{n_{AB}+n_{BA}}$")
 plt.ylabel("S/N")
 plt.tight_layout()
 plt.xlim([0, 1])
