@@ -3,8 +3,10 @@ import random
 import matplotlib.patches as mpatches
 import numpy as np
 
-height = 9
-width = 9
+random.seed(0)
+
+height = 6
+width = 6
 if height % 2 == 1 or width % 2 == 1:
     print("warning: reflections only work with even dims")
 
@@ -135,9 +137,9 @@ def gen_occ(l):
 
 
 def rand_symmetry():
-    match random.choice(["R"]):
+    match random.choice(["T", "R"]):
         case "T":
-            return ("T", (random.randrange(2), random.randrange(2)))
+            return ("T", (random.randrange(2), random.randrange(2), random.randrange(2)))
         case "R":
             return ("R", (random.randrange(width), random.randrange(height), random.randrange(3)))
 
@@ -148,9 +150,10 @@ def recenter(pos):
 
 def apply_symmetry(sym, pos):
     match sym:
-        case("T", (dx, dy)):
-            return recenter((pos[0] + dx, pos[1] + dy, pos[2]))
+        case("T", (dx, dy, ds)):
+            return recenter((pos[0] + dx + (pos[2] + ds) // 2, pos[1] + dy, (pos[2] + ds) % 2))
         case("R", (cx, cy, dir)):
+            
             px, py, ps = recenter(
                 (pos[0] - cx + width//2, pos[1] - cy + height//2, pos[2]))
             px -= width//2
@@ -304,6 +307,7 @@ def enumerate_tilings():
 
     import itertools
     for init_mask in itertools.product([0, 1], repeat=width):
+        print(init_mask)
         init_mask = list(init_mask)
         init_shape = shape_of(init_mask)
         init_row = advance(init_shape, None)
@@ -331,47 +335,42 @@ def enumerate_tilings():
             dfs[-1] = (dfs[-1][0], advance(dfs[-1][0], dfs[-1][1]))
 
 def pocket_move(sample):
-    def move(pair, old, new):
-        pair[0][pair[0].index(el)] = new
-
-        for occ in occupations(old):
-            del pair[1][occ]
-        for occ in occupations(new):
-            pair[1][occ] = new
-
     positions, occ = sample
     seed = random.choice(positions)
 
     pocket = ([seed], {x: seed for x in occupations(seed)})
-    Abar = (pocket[0].copy(), pocket[1].copy())
+    Abar = ([], {})
     A = (positions.copy(), occ.copy())
 
     A[0].remove(seed)
-    for occ in occupations(seed):
-        del A[1][occ]
+    for pt in occupations(seed):
+        del A[1][pt]
 
     sym = rand_symmetry()
+    print(sym)
 
     while len(pocket[0]) > 0:
         el = random.choice(pocket[0])
         moved = apply_symmetry(sym, el)
 
+        # final location fixed: move from pocket to complement
         pocket[0].remove(el)
-        for occ in occupations(el):
-            del pocket[1][occ]
+        for pt in occupations(el):
+            del pocket[1][pt]
 
-        move(Abar, el, moved)
+        Abar[0].append(moved)
+        for pt in occupations(moved):
+            Abar[1][pt] = moved
 
-        for occ in occupations(moved):
-            if occ in A[1]:
-                overlap = A[1][occ]
+        for pt in occupations(moved):
+            if pt in A[1]:
+                overlap = A[1][pt]
 
+                # move from A to pocket
                 A[0].remove(overlap)
-                Abar[0].append(overlap)
                 pocket[0].append(overlap)
                 for occ in occupations(overlap):
                     del A[1][occ]
-                    Abar[1][occ] = overlap
                     pocket[1][occ] = overlap
 
     return (A[0] + Abar[0], A[1] | Abar[1]), len(Abar[0])
@@ -447,5 +446,52 @@ def main2():
 
     plt.show()
 
+def main3():
+    tilings = [rowspace_to_trimers(x) for x in enumerate_tilings()]
+    occs = {frozenset(x): 0 for x in tilings}
+
+    pos = [(0, 0, 0), (3, 0, 0), (1, 1, 0), (4, 1, 0), (2, 2, 0), (5, 2, 0),
+           (0, 3, 0), (3, 3, 0), (1, 4, 0), (4, 4, 0), (2, 5, 0), (5, 5, 0)]
+    sample = (pos, gen_occ(pos))
+    orig_sample = sample
+
+    for i in range(5000):
+        sample, _ = pocket_move(sample)
+
+        # fig, ax = plt.subplots(1, 1, figsize=[8, 8])
+        # draw_hexalattice(ax)
+        # show_tiling(ax, sample)
+        # plt.show()
+
+        fig, ax = plt.subplots(1, 1, figsize=[8, 8])
+        draw_hexalattice(ax)
+        show_tiling(ax, sample)
+        plt.show()
+
+        occs[frozenset(sample[0])] += 1
+
+    print(occs.values())
+    print(len(occs), sum(x > 0 for x in occs.values()))
+
+    fig, ax = plt.subplots(1, 1, figsize=[8, 8])
+    draw_hexalattice(ax)
+    sample = (tilings[9], gen_occ(tilings[9]))
+    print(occs[frozenset(tilings[9])])
+    show_tiling(ax, sample)
+
+    fig, ax = plt.subplots(1, 1, figsize=[8, 8])
+    draw_hexalattice(ax)
+    show_tiling(ax, orig_sample)
+
+    fig, ax = plt.subplots(1, 1, figsize=[8, 8])
+    draw_hexalattice(ax)
+    sample = (tilings[8], gen_occ(tilings[8]))
+    print(occs[frozenset(tilings[8])])
+    show_tiling(ax, sample)
+
+    plt.show()
+
+
 # main()
-main2()
+# main2()
+main3()
