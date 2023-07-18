@@ -3,12 +3,13 @@ import random
 import matplotlib.patches as mpatches
 import numpy as np
 
-random.seed(0)
+# random.seed(0)
 
-height = 6
-width = 6
-if height % 2 == 1 or width % 2 == 1:
-    print("warning: reflections only work with even dims")
+height = 48
+width = 48
+
+if height != width:
+    print("warning: XY or X'Y' reflections only work with square dims")
 
 R = 1
 plt.rcParams["mathtext.fontset"] = "dejavuserif"
@@ -76,7 +77,7 @@ def draw_duallattice(ax, color=None, ls="-"):
             [xy[1] + R/2, xy[1] + R], color=color, lw=1, zorder=-0.5)
 
 
-def show_tiling(ax, sample, wf="hexa"):
+def show_tiling(ax, sample, color="blue", wf="hexa"):
     pos, occ = sample
     for x, y, s in pos:
         if wf == "tri":
@@ -84,26 +85,30 @@ def show_tiling(ax, sample, wf="hexa"):
                 xy = trilatloc((x, y), "up")
                 polygon = mpatches.RegularPolygon(xy, numVertices=3,
                                                   radius=R,
-                                                  orientation=0)
+                                                  orientation=0,
+                                                  fc=color)
             else:
                 xy = trilatloc((x, y), "down")
                 polygon = mpatches.RegularPolygon(xy, numVertices=3,
                                                   radius=R,
-                                                  orientation=np.pi)
+                                                  orientation=np.pi,
+                                                  fc=color)
             ax.add_patch(polygon)
         else:
             if s == 0:
                 xy = trilatloc((x, y), "up")
                 ax.add_patch(mpatches.Circle(xy, radius=R/3,
-                                             facecolor="blue", ec='k'))
+                                             facecolor=color,
+                                             ec='k'))
             else:
                 xy = trilatloc((x, y), "down")
                 ax.add_patch(mpatches.Circle(xy, radius=R/3,
-                                             facecolor="blue", ec='k'))
+                                             facecolor=color,
+                                             ec='k'))
 
     ax.axis("off")
-    ax.set_xlim([0, 24])
-    ax.set_ylim([0, 16])
+    ax.set_xlim([0, 24*3])
+    ax.set_ylim([0, 16*3])
     ax.set_aspect("equal")
 
 
@@ -123,7 +128,7 @@ def find_overlaps(sample, new_trimer):
 
 def occupations(pos):
     if pos[2] == 0:
-        return [(pos[0], pos[1]), ((pos[0] + 1) % width, pos[1]), (pos[0], (pos[1] + 1) % width)]
+        return [(pos[0], pos[1]), ((pos[0] + 1) % width, pos[1]), (pos[0], (pos[1] + 1) % height)]
     else:
         return [((pos[0] + 1) % width, (pos[1] + 1) % height), ((pos[0] + 1) % width, pos[1]), (pos[0], (pos[1] + 1) % height)]
 
@@ -137,11 +142,11 @@ def gen_occ(l):
 
 
 def rand_symmetry():
-    match random.choice(["T", "R"]):
+    match random.choice(["R"]):
         case "T":
             return ("T", (random.randrange(2), random.randrange(2), random.randrange(2)))
         case "R":
-            return ("R", (random.randrange(width), random.randrange(height), random.randrange(3)))
+            return ("R", (random.randrange(width), random.randrange(height), random.randrange(6)))
 
 
 def recenter(pos):
@@ -153,11 +158,19 @@ def apply_symmetry(sym, pos):
         case("T", (dx, dy, ds)):
             return recenter((pos[0] + dx + (pos[2] + ds) // 2, pos[1] + dy, (pos[2] + ds) % 2))
         case("R", (cx, cy, dir)):
-            
             px, py, ps = recenter(
                 (pos[0] - cx + width//2, pos[1] - cy + height//2, pos[2]))
+
+            # if (width % 2 == 1 and px == width-1) or \
+            #     (height % 2 == 1 and py == height-1):
+            #     if 0 <= dir < 3:
+            #         return (pos[0], pos[1], 1-dir)
+            #     else:
+            #         return (pos[0], pos[1], dir)
+
             px -= width//2
             py -= height//2
+
             match dir:
                 case 0:  # X axis
                     if ps == 0:
@@ -174,6 +187,21 @@ def apply_symmetry(sym, pos):
                         return recenter((cx-py-1, cy-px-1, 1))
                     else:
                         return recenter((cx-py-1, cy-px-1, 0))
+                case 3: # X' axis
+                    if ps == 0:
+                        return recenter((cx-px-1-py, cy+py, 0))
+                    else:
+                        return recenter((cx-px-2-py, cy+py, 1))
+                case 4: # Y' axis
+                    if ps == 0:
+                        return recenter((cx+px, cy-py-1-px, 0))
+                    else:
+                        return recenter((cx+px, cy-py-2-px, 1))
+                case 5: # X' + Y' axis
+                    if ps == 0:
+                        return recenter((cx+py, cy+px, 0))
+                    else:
+                        return recenter((cx+py, cy+px, 1))
     return pos
 
 def enumerate_tilings():
@@ -334,6 +362,18 @@ def enumerate_tilings():
             
             dfs[-1] = (dfs[-1][0], advance(dfs[-1][0], dfs[-1][1]))
 
+def find_monomers(sample):
+    positions, occs = sample
+    locs = set()
+    for x in range(width):
+        for y in range(height):
+            locs.add((x, y))
+    for p in positions:
+        for pt in occupations(p):
+            locs.discard((pt))
+    return locs
+            
+
 def pocket_move(sample):
     positions, occ = sample
     seed = random.choice(positions)
@@ -347,11 +387,17 @@ def pocket_move(sample):
         del A[1][pt]
 
     sym = rand_symmetry()
-    print(sym)
 
     while len(pocket[0]) > 0:
         el = random.choice(pocket[0])
         moved = apply_symmetry(sym, el)
+
+        # fig, ax = plt.subplots(1, 1, figsize=[8, 8])
+        # draw_hexalattice(ax)
+        # show_tiling(ax, (A[0], None), "blue")
+        # show_tiling(ax, (Abar[0], None), "green")
+        # show_tiling(ax, (pocket[0], None), "red")
+        # plt.show()
 
         # final location fixed: move from pocket to complement
         pocket[0].remove(el)
@@ -385,22 +431,6 @@ def rowspace_to_trimers(rows):
             if row[j] == -1:
                 ret.append(((j-1)%len(row), i, 1))
     return ret
-
-
-def main():
-    fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-    draw_hexalattice(ax)
-    pos = [(0, 0, 0), (3, 0, 0), (1, 1, 0), (4, 1, 0), (2, 2, 0), (5, 2, 0),
-           (0, 3, 0), (3, 3, 0), (1, 4, 0), (4, 4, 0), (2, 5, 0), (5, 5, 0)]
-    sample = (pos, gen_occ(pos))
-    show_tiling(ax, sample)
-
-    fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-    draw_hexalattice(ax)
-    updated, N = pocket_move(sample)
-    show_tiling(ax, updated)
-    print(N)
-    plt.show()
 
 def main2():
     class Index:
@@ -446,16 +476,32 @@ def main2():
 
     plt.show()
 
-def main3():
-    tilings = [rowspace_to_trimers(x) for x in enumerate_tilings()]
+
+def main4():
+    tilings = []
+    n = 0
+    for x in enumerate_tilings():
+        n += 1
+
+        # tr = rowspace_to_trimers(x)
+        # tilings.append(tr)
+        # f.write(";".join(",".join(str(i) for i in a) for a in tr) + "\n")
+
+    print(n)
+
     occs = {frozenset(x): 0 for x in tilings}
 
-    pos = [(0, 0, 0), (3, 0, 0), (1, 1, 0), (4, 1, 0), (2, 2, 0), (5, 2, 0),
-           (0, 3, 0), (3, 3, 0), (1, 4, 0), (4, 4, 0), (2, 5, 0), (5, 5, 0)]
+    pos = []
+    for i in [0, 3, 6, 9]:
+        for j in [0, 3, 6, 9]:
+            pos.append((i, j, 0))
+            pos.append((i+1, j+1, 0))
+            pos.append((i+2, j+2, 0))
+
     sample = (pos, gen_occ(pos))
     orig_sample = sample
 
-    for i in range(5000):
+    for i in range(20000):
         sample, _ = pocket_move(sample)
 
         # fig, ax = plt.subplots(1, 1, figsize=[8, 8])
@@ -463,12 +509,10 @@ def main3():
         # show_tiling(ax, sample)
         # plt.show()
 
-        fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-        draw_hexalattice(ax)
-        show_tiling(ax, sample)
-        plt.show()
-
-        occs[frozenset(sample[0])] += 1
+        if frozenset(sample[0]) not in occs:
+            occs[frozenset(sample[0])] = 1
+        else:
+            occs[frozenset(sample[0])] += 1
 
     print(occs.values())
     print(len(occs), sum(x > 0 for x in occs.values()))
@@ -491,7 +535,61 @@ def main3():
 
     plt.show()
 
+def monomer_dists(pos):
+    ret = []
+    pos = list(pos)
+    for i in range(len(pos)):
+        for j in range(i+1, len(pos)):
+            ret.append(((pos[i][0]-pos[j][0])%width, (pos[i][1]-pos[j][1])%height))
+            ret.append(((pos[j][0]-pos[i][0])%width, (pos[j][1]-pos[i][1])%height))
+    return ret
+
+
+def main5():
+    pos = []
+    for i in range(0, height, 3):
+        for j in range(0, width, 3):
+            pos.append((i, j, 0))
+            pos.append((i+1, j+1, 0))
+            pos.append((i+2, j+2, 0))
+    pos.remove((0, 0, 0))
+
+    sample = (pos, gen_occ(pos))
+
+    fig, ax = plt.subplots(1, 1, figsize=[8, 8])
+    draw_hexalattice(ax)
+    show_tiling(ax, sample)
+    plt.show()
+
+    dists = np.zeros((width, height))
+
+    for i in range(100000):
+        if i % 1000 == 0:
+            print(i)
+        sample, _ = pocket_move(sample)
+
+        # fig, ax = plt.subplots(1, 1, figsize=[8, 8])
+        # draw_hexalattice(ax)
+        # show_tiling(ax, sample)
+        # plt.show()
+
+        pos = find_monomers(sample)
+        inter = monomer_dists(pos)
+        for dist in inter:
+            dists[dist[0], dist[1]] += 1
+    np.save("48x48-100000", dists)
+    # dists = np.load("corrs.npy")
+
+    plt.figure()
+    plt.matshow(dists, origin="lower")
+    plt.figure()
+    Xs = list(range(1, width))
+    plt.plot(Xs, [dists[(x, 0)] for x in Xs])
+    plt.show()
 
 # main()
 # main2()
-main3()
+# main3()
+# main4()
+main5()
+
