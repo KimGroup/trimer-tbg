@@ -1,12 +1,13 @@
 import matplotlib.pyplot as plt
+import cProfile
 import random
 import matplotlib.patches as mpatches
 import numpy as np
 
 # random.seed(0)
 
-height = 48
-width = 48
+height = 12
+width = 12
 
 if height != width:
     print("warning: XY or X'Y' reflections only work with square dims")
@@ -477,19 +478,19 @@ def main2():
     plt.show()
 
 
+def encode_trimer_list(trimers):
+    return ";".join(",".join(str(i) for i in a) for a in trimers)
+
 def main4():
     tilings = []
-    n = 0
-    for x in enumerate_tilings():
-        n += 1
+    # for x in enumerate_tilings():
 
         # tr = rowspace_to_trimers(x)
         # tilings.append(tr)
         # f.write(";".join(",".join(str(i) for i in a) for a in tr) + "\n")
 
-    print(n)
-
-    occs = {frozenset(x): 0 for x in tilings}
+    print(len(tilings))
+    occs = {encode_trimer_list(x): 0 for x in tilings}
 
     pos = []
     for i in [0, 3, 6, 9]:
@@ -502,6 +503,9 @@ def main4():
     orig_sample = sample
 
     for i in range(20000):
+        if i % 1000 == 0:
+            print(i)
+
         sample, _ = pocket_move(sample)
 
         # fig, ax = plt.subplots(1, 1, figsize=[8, 8])
@@ -510,11 +514,11 @@ def main4():
         # plt.show()
 
         if frozenset(sample[0]) not in occs:
-            occs[frozenset(sample[0])] = 1
+            occs[encode_trimer_list(sample[0])] = 1
         else:
-            occs[frozenset(sample[0])] += 1
+            occs[encode_trimer_list(sample[0])] += 1
 
-    print(occs.values())
+    # print(occs.values())
     print(len(occs), sum(x > 0 for x in occs.values()))
 
     fig, ax = plt.subplots(1, 1, figsize=[8, 8])
@@ -577,7 +581,7 @@ def main5():
         inter = monomer_dists(pos)
         for dist in inter:
             dists[dist[0], dist[1]] += 1
-    np.save("48x48-100000", dists)
+    # np.save("48x48-100000", dists)
     # dists = np.load("corrs.npy")
 
     plt.figure()
@@ -590,6 +594,6 @@ def main5():
 # main()
 # main2()
 # main3()
-# main4()
-main5()
+cProfile.run("main4()")
+# main5()
 
