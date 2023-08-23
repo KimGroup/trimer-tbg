@@ -1,13 +1,13 @@
+import matplotlib
+import scipy
 import matplotlib.pyplot as plt
 import cProfile
 import random
 import matplotlib.patches as mpatches
 import numpy as np
 
-# random.seed(0)
-
-height = 12
-width = 12
+height = 48
+width = 48
 
 if height != width:
     print("warning: XY or X'Y' reflections only work with square dims")
@@ -150,16 +150,22 @@ def rand_symmetry():
             return ("R", (random.randrange(width), random.randrange(height), random.randrange(6)))
 
 
-def recenter(pos):
+def recenter_tri(pos):
     return (pos[0] % width, pos[1] % height, pos[2])
 
+def recenter_mono(pos):
+    return (pos[0] % width, pos[1] % height)
+
+def center_mono(c, pos):
+    r = recenter_mono((pos[0]-c[0]+width//2, pos[1]-c[1]+height//2))
+    return r[0]-width//2, r[1]-height//2
 
 def apply_symmetry(sym, pos):
     match sym:
         case("T", (dx, dy, ds)):
-            return recenter((pos[0] + dx + (pos[2] + ds) // 2, pos[1] + dy, (pos[2] + ds) % 2))
+            return recenter_tri((pos[0] + dx + (pos[2] + ds) // 2, pos[1] + dy, (pos[2] + ds) % 2))
         case("R", (cx, cy, dir)):
-            px, py, ps = recenter(
+            px, py, ps = recenter_tri(
                 (pos[0] - cx + width//2, pos[1] - cy + height//2, pos[2]))
 
             # if (width % 2 == 1 and px == width-1) or \
@@ -175,165 +181,174 @@ def apply_symmetry(sym, pos):
             match dir:
                 case 0:  # X axis
                     if ps == 0:
-                        return recenter((cx+px+py, cy-py-1, 1))
+                        return recenter_tri((cx+px+py, cy-py-1, 1))
                     else:
-                        return recenter((cx+px+py+1, cy-py-1, 0))
+                        return recenter_tri((cx+px+py+1, cy-py-1, 0))
                 case 1:  # Y axis
                     if ps == 0:
-                        return recenter((cx-px-1, cy+py+px, 1))
+                        return recenter_tri((cx-px-1, cy+py+px, 1))
                     else:
-                        return recenter((cx-px-1, cy+py+px+1, 0))
+                        return recenter_tri((cx-px-1, cy+py+px+1, 0))
                 case 2:  # X+Y axis
                     if ps == 0:
-                        return recenter((cx-py-1, cy-px-1, 1))
+                        return recenter_tri((cx-py-1, cy-px-1, 1))
                     else:
-                        return recenter((cx-py-1, cy-px-1, 0))
+                        return recenter_tri((cx-py-1, cy-px-1, 0))
                 case 3: # X' axis
                     if ps == 0:
-                        return recenter((cx-px-1-py, cy+py, 0))
+                        return recenter_tri((cx-px-1-py, cy+py, 0))
                     else:
-                        return recenter((cx-px-2-py, cy+py, 1))
+                        return recenter_tri((cx-px-2-py, cy+py, 1))
                 case 4: # Y' axis
                     if ps == 0:
-                        return recenter((cx+px, cy-py-1-px, 0))
+                        return recenter_tri((cx+px, cy-py-1-px, 0))
                     else:
-                        return recenter((cx+px, cy-py-2-px, 1))
+                        return recenter_tri((cx+px, cy-py-2-px, 1))
                 case 5: # X' + Y' axis
                     if ps == 0:
-                        return recenter((cx+py, cy+px, 0))
+                        return recenter_tri((cx+py, cy+px, 0))
                     else:
-                        return recenter((cx+py, cy+px, 1))
+                        return recenter_tri((cx+py, cy+px, 1))
     return pos
 
-def enumerate_tilings():
-    def mask_above(row):
-        if row is None:
-            return None
-        places = []
-        for i in range(len(row)):
-            if row[i] == 1 or row[i] == -1 or row[(i+1)%len(row)] == -1:
-                places.append(1)
-            else:
-                places.append(0)
-        return places
-
-    def shape_of(mask):
-        if mask is None:
-            return None
-
-        if all(x == 0 for x in mask):
-            # periodic
-            return len(mask), [(0, len(mask))]
-
-        shift = mask.index(1)
-        mask = mask[shift:] + mask[:shift]
-
-        ret = []
-        begin = -1
-        for i in range(len(mask)):
-            if mask[i] == 1:
-                if begin < i - 1:
-                    ret.append(((begin+shift+1)%len(mask), i-begin-1))
-                begin = i
-        if begin < len(mask) - 1:
-            ret.append(((begin+shift+1)%len(mask), len(mask)-begin-1))
-
-        return len(mask), ret
-
-    def advance(shape, prev):
-        size, slots = shape
-        if len(slots) == 0:
-            if prev is None:
-                return [0] * size
-            else:
-                return None
-
-        if slots[0][1] == size:
-            periodic = True
-            shift = 0
-
-            if prev is not None:
-                if prev[0] == 1:
-                    return prev[1:] + prev[:1]
-                elif prev[0] == 2:
-                    prev = prev[-1:] + prev[:-1]
+def mask_above(row):
+    if row is None:
+        return None
+    places = []
+    for i in range(len(row)):
+        if row[i] == 1 or row[i] == -1 or row[(i+1)%len(row)] == -1:
+            places.append(1)
         else:
-            periodic = False
-            shift = slots[0][0]
+            places.append(0)
+    return places
 
-        def fill_reset(begin, row):
-            for start, l in slots:
-                shifted_start = (start-shift)%len(row)
-                if shifted_start + l >= begin:
-                    true_start = max(shifted_start, begin)
-                    true_length = shifted_start + l - true_start
-                    # print("fill", true_start, true_length)
+def shape_of(mask):
+    if mask is None:
+        return None
 
-                    if periodic and true_length%2 == 1 and row[0] == -1:
-                        # U..UDU
-                        if true_length < 3:
-                            return False
+    if all(x == 0 for x in mask):
+        # periodic
+        return len(mask), [(0, len(mask))]
 
-                        for i in range(true_start, shifted_start+l-3, 2):
-                            row[i] = 1
-                            row[i+1] = 2
-                        row[shifted_start+l-3] = -1
-                        row[shifted_start+l-2] = 1
-                        row[shifted_start+l-1] = 2
-                    else:
-                        # U..UU(D?)
-                        for i in range(true_start, shifted_start+l-1, 2):
-                            row[i] = 1
-                            row[i+1] = 2
+    shift = mask.index(1)
+    mask = mask[shift:] + mask[:shift]
 
-                        if true_length%2 == 1:
-                            row[shifted_start+l-1] = -1
-            return True
+    ret = []
+    begin = -1
+    for i in range(len(mask)):
+        if mask[i] == 1:
+            if begin < i - 1:
+                ret.append(((begin+shift+1)%len(mask), i-begin-1))
+            begin = i
+    if begin < len(mask) - 1:
+        ret.append(((begin+shift+1)%len(mask), len(mask)-begin-1))
 
+    return len(mask), ret
+
+def rotate(pos, dir):
+    match dir % 6:
+        case 0: return pos
+        case 1: return (-pos[1], pos[0]+pos[1])
+        case 2: return (-pos[0]-pos[1], pos[0])
+        case 3: return (-pos[0], -pos[1])
+        case 4: return (pos[1], -pos[0]-pos[1])
+        case 5: return (pos[0]+pos[1], -pos[0])
+
+
+def advance(shape, prev):
+    size, slots = shape
+    if len(slots) == 0:
         if prev is None:
-            ret = [0] * size
-            fill_reset(0, ret)
-            return ret[-shift:] + ret[:-shift]
-
-        prev = prev[shift:] + prev[:shift]
-        ret = prev.copy()
-
-        for i in reversed(range(len(prev))):
-            if i >= 3 and \
-                    (ret[(i+1)%len(ret)] == 0 or ret[(i+1)%len(ret)] == 1) and \
-                    ret[i] == 2 and ret[i-2] == 2 and \
-                    (i < 4 or ret[i-4] == 2 or ret[i-4] == 0):
-                # match [U^]UU[U$], replace with [U^]DUD[U$]
-                # print("match A", i)
-                ret[i-3] = -1
-                ret[i-2] = 1
-                ret[i-1] = 2
-                ret[i] = -1
-                break
-            if i >= 2 and \
-                    ret[i] == -1 and ret[i-1] == 2 and \
-                    (i < 3 or ret[i-3] == 2 or ret[i-3] == 0):
-                # match [U^]UD..., replace with [U^]DU(U..?)
-                # print("match B", i)
-                temp_ret = ret.copy()
-                temp_ret[i-2] = -1
-                temp_ret[i-1] = 1
-                temp_ret[i] = 2
-                if not fill_reset(i+1, temp_ret):
-                    continue
-                ret = temp_ret
-                break
+            return [0] * size
         else:
             return None
 
-        return ret[-shift:] + ret[:-shift]
-    
-    # shape = (12, [(0, 12)])
-    # x = advance(shape, None)
-    # while x is not None:
-    #     print(x)
-    #     x = advance(shape, x)
+    if slots[0][1] == size:
+        periodic = True
+        shift = 0
 
+        if prev is not None:
+            if prev[0] == 1:
+                return prev[1:] + prev[:1]
+            elif prev[0] == 2:
+                prev = prev[-1:] + prev[:-1]
+    else:
+        periodic = False
+        shift = slots[0][0]
+
+    def fill_reset(begin, row):
+        for start, l in slots:
+            shifted_start = (start-shift)%len(row)
+            if shifted_start + l >= begin:
+                true_start = max(shifted_start, begin)
+                true_length = shifted_start + l - true_start
+                # print("fill", true_start, true_length)
+
+                if periodic and true_length%2 == 1 and row[0] == -1:
+                    # U..UDU
+                    if true_length < 3:
+                        return False
+
+                    for i in range(true_start, shifted_start+l-3, 2):
+                        row[i] = 1
+                        row[i+1] = 2
+                    row[shifted_start+l-3] = -1
+                    row[shifted_start+l-2] = 1
+                    row[shifted_start+l-1] = 2
+                else:
+                    # U..UU(D?)
+                    for i in range(true_start, shifted_start+l-1, 2):
+                        row[i] = 1
+                        row[i+1] = 2
+
+                    if true_length%2 == 1:
+                        row[shifted_start+l-1] = -1
+        return True
+
+    if prev is None:
+        ret = [0] * size
+        fill_reset(0, ret)
+        return ret[-shift:] + ret[:-shift]
+
+    prev = prev[shift:] + prev[:shift]
+    ret = prev.copy()
+
+    for i in reversed(range(len(prev))):
+        if i >= 3 and \
+                (ret[(i+1)%len(ret)] == 0 or ret[(i+1)%len(ret)] == 1) and \
+                ret[i] == 2 and ret[i-2] == 2 and \
+                (i < 4 or ret[i-4] == 2 or ret[i-4] == 0):
+            # match [U^]UU[U$], replace with [U^]DUD[U$]
+            # print("match A", i)
+            temp_ret = ret.copy()
+            temp_ret[i-3] = -1
+            temp_ret[i-2] = 1
+            temp_ret[i-1] = 2
+            temp_ret[i] = -1
+            if not fill_reset(i+1, temp_ret):
+                continue
+            ret = temp_ret
+            break
+        if i >= 2 and \
+                ret[i] == -1 and ret[i-1] == 2 and \
+                (i < 3 or ret[i-3] == 2 or ret[i-3] == 0):
+            # match [U^]UD..., replace with [U^]DU(U..?)
+            # print("match B", i)
+            temp_ret = ret.copy()
+            temp_ret[i-2] = -1
+            temp_ret[i-1] = 1
+            temp_ret[i] = 2
+            if not fill_reset(i+1, temp_ret):
+                continue
+            ret = temp_ret
+            break
+    else:
+        return None
+
+    return ret[-shift:] + ret[:-shift]
+    
+
+def enumerate_tilings():
     import itertools
     for init_mask in itertools.product([0, 1], repeat=width):
         print(init_mask)
@@ -349,6 +364,7 @@ def enumerate_tilings():
 
                 next_row = advance(dfs[-1][0], dfs[-1][1])
                 dfs[-1] = (dfs[-1][0], next_row)
+
                 continue
 
             if len(dfs) < height:
@@ -356,6 +372,21 @@ def enumerate_tilings():
                 new_row = advance(prev_shape, None)
                 dfs.append((prev_shape, new_row))
                 continue
+
+            # if dfs[1][1] == [-1, 0, 0, -1, 0, 0, -1, 1, 2, -1, 1, 2] and \
+            #     dfs[2][1] == [0, -1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0] and \
+            #     dfs[3][1] == [0, 0, -1, 0, 0, 1, 2, -1, 1, 2, 1, 2] and \
+            #     dfs[4][1] == [2, 0, 0, 1, 2, 0, 0, 0, 0, -1, 0, 1] and \
+            #     dfs[5][1] == [1, 2, -1, 0, -1, 1, 2, -1, 0, 0, -1, 0]:
+            #     print("try:")
+            #     print("\n".join([" ".join(str(x) if x>=0 else "-" for x in row) for shape, row in reversed(dfs)]))
+            #     if mask_above(dfs[-1][1]) == init_mask:
+            #         print("passed")
+            #         fig, ax = plt.subplots(1, 1, figsize=[8, 8])
+            #         draw_hexalattice(ax)
+            #         show_tiling(ax, (rowspace_to_trimers([row for shape, row in dfs]), None))
+            #         plt.savefig("dfs.png")
+            #     input()
             
             # match vertical PBC
             if mask_above(dfs[-1][1]) == init_mask:
@@ -374,7 +405,6 @@ def find_monomers(sample):
             locs.discard((pt))
     return locs
             
-
 def pocket_move(sample):
     positions, occ = sample
     seed = random.choice(positions)
@@ -479,18 +509,19 @@ def main2():
 
 
 def encode_trimer_list(trimers):
-    return ";".join(",".join(str(i) for i in a) for a in trimers)
+    return ";".join(",".join(str(i) for i in a) for a in sorted(trimers))
 
 def main4():
-    tilings = []
-    # for x in enumerate_tilings():
+    with open("12x12-tilings.dat", "w") as f:
+        for x in enumerate_tilings():
+            tr = rowspace_to_trimers(x)
+            f.write(encode_trimer_list(tr) + "\n")
 
-        # tr = rowspace_to_trimers(x)
-        # tilings.append(tr)
-        # f.write(";".join(",".join(str(i) for i in a) for a in tr) + "\n")
+def main4_5():
+    with open("12x12-tilings.dat", "r") as f:
+        occs = {x.strip(): 0 for x in f.readlines()}
 
-    print(len(tilings))
-    occs = {encode_trimer_list(x): 0 for x in tilings}
+    print(len(occs))
 
     pos = []
     for i in [0, 3, 6, 9]:
@@ -501,52 +532,92 @@ def main4():
 
     sample = (pos, gen_occ(pos))
     orig_sample = sample
+    
+    fitx = []
+    fity = []
 
-    for i in range(20000):
-        if i % 1000 == 0:
-            print(i)
+    # for i in range(8000000):
+    #     if i > 0 and i % 5000 == 0:
+    #         fitx.append(i)
+    #         fity.append(len(occs))
+    #         print(i, len(occs))
 
-        sample, _ = pocket_move(sample)
+    #     sample, _ = pocket_move(sample)
 
-        # fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-        # draw_hexalattice(ax)
-        # show_tiling(ax, sample)
-        # plt.show()
+    #     # fig, ax = plt.subplots(1, 1, figsize=[8, 8])
+    #     # draw_hexalattice(ax)
+    #     # show_tiling(ax, sample)
+    #     # plt.show()
 
-        if frozenset(sample[0]) not in occs:
-            occs[encode_trimer_list(sample[0])] = 1
-        else:
-            occs[encode_trimer_list(sample[0])] += 1
+    #     enc = encode_trimer_list(sample[0])
+    #     if enc not in occs:
+    #         fig, ax = plt.subplots(1, 1, figsize=[8, 8])
+    #         draw_hexalattice(ax)
+    #         show_tiling(ax, sample)
+    #         plt.savefig("asdf.png")
+    #         asdf
+    #         occs[enc] = 1
+    #     else:
+    #         occs[enc] += 1
+    
+    # np.save("fitx", fitx)
+    # np.save("fity", fity)
+    fitx = np.load("fitx.npy")
+    fity = np.load("fity.npy")
 
-    # print(occs.values())
-    print(len(occs), sum(x > 0 for x in occs.values()))
+    plt.plot(fitx, fity, "o")
+    # def f(x, n):
+    #     return n*(1-np.exp(-x/n))
+    # def f(x, n):
+    #     return n*(1-np.power((n-1)/n, x))
 
-    fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-    draw_hexalattice(ax)
-    sample = (tilings[9], gen_occ(tilings[9]))
-    print(occs[frozenset(tilings[9])])
-    show_tiling(ax, sample)
+    # a, c = scipy.optimize.curve_fit(f, fitx, fity)
+    # plt.plot(np.linspace(0, 5e6), f(np.linspace(0, 5e6), a[0]), label=f"best fit: {round(a[0])}+-{round(np.sqrt(c[0,0]))}")
 
-    fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-    draw_hexalattice(ax)
-    show_tiling(ax, orig_sample)
+    plt.xlabel("# MC samples")
+    plt.ylabel("# unique states visited")
+    plt.axhline(2758128, label="true # states from exact enum=2467326")
 
-    fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-    draw_hexalattice(ax)
-    sample = (tilings[8], gen_occ(tilings[8]))
-    print(occs[frozenset(tilings[8])])
-    show_tiling(ax, sample)
+    plt.legend()
+    plt.savefig("fig.png")
 
-    plt.show()
-
-def monomer_dists(pos):
-    ret = []
+def monomer_monomer(pos):
     pos = list(pos)
     for i in range(len(pos)):
         for j in range(i+1, len(pos)):
-            ret.append(((pos[i][0]-pos[j][0])%width, (pos[i][1]-pos[j][1])%height))
-            ret.append(((pos[j][0]-pos[i][0])%width, (pos[j][1]-pos[i][1])%height))
-    return ret
+            yield center_mono((0, 0), (pos[i][0]-pos[j][0], pos[i][1]-pos[j][1]))
+
+def trimer_trimer(sample):
+    pos, occ = sample
+    for _ in range(400):
+        ij = np.random.randint(len(pos), size=2)
+        i, j = ij[0], ij[1]
+        if (pos[i][2] != 0 or pos[j][2] != 0): continue
+        yield center_mono((0, 0), (pos[i][0]-pos[j][0], pos[i][1]-pos[j][1]))
+
+def monomer_dimer(pos):
+    pos = list(pos)
+    for i in range(len(pos)):
+        for j in range(i+1, len(pos)):
+            c = None
+            for dx, dy, r in [(1, 0, 0), (0, 1, 1), (-1, 1, 2)]:
+                if (pos[i][0] + dx) % width == pos[j][0] and (pos[i][1] + dy) % height == pos[j][1]:
+                    c = pos[i]
+                    rot = r
+                    break
+                if (pos[j][0] + dx) % width == pos[i][0] and (pos[j][1] + dy) % height == pos[i][1]:
+                    c = pos[j]
+                    rot = r
+                    break
+            
+            if c is not None:
+                for k in range(len(pos)):
+                    if k == i or k == j:
+                        continue
+                    yield center_mono((0, 0), rotate(center_mono(c, pos[k]), -rot))
+                    if pos[0] != (0, 0):
+                        pass
+                        # import pdb; pdb.set_trace()
 
 
 def main5():
@@ -565,35 +636,40 @@ def main5():
     show_tiling(ax, sample)
     plt.show()
 
-    dists = np.zeros((width, height))
+    mono_di = {}
+    tri_tri = {}
 
-    for i in range(100000):
+    for i in range(1000):
+        sample, _ = pocket_move(sample)
+
+
+    for i in range(40000):
         if i % 1000 == 0:
             print(i)
         sample, _ = pocket_move(sample)
 
-        # fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-        # draw_hexalattice(ax)
-        # show_tiling(ax, sample)
-        # plt.show()
-
         pos = find_monomers(sample)
-        inter = monomer_dists(pos)
-        for dist in inter:
-            dists[dist[0], dist[1]] += 1
-    # np.save("48x48-100000", dists)
-    # dists = np.load("corrs.npy")
 
-    plt.figure()
-    plt.matshow(dists, origin="lower")
-    plt.figure()
-    Xs = list(range(1, width))
-    plt.plot(Xs, [dists[(x, 0)] for x in Xs])
-    plt.show()
+        # for dist in monomer_dimer(pos):
+        #     if dist in mono_di:
+        #         mono_di[dist] += 1
+        #     else:
+        #         mono_di[dist] = 1
+
+        if i % 10 == 0:
+            for dist in trimer_trimer(sample):
+                if dist in tri_tri:
+                    tri_tri[dist] += 1
+                else:
+                    tri_tri[dist] = 1
+
+    print(tri_tri)
+    # np.save("48x48-3-100000-mono-di", mono_di)
+    np.save("48x48-3-100000-tri-tri", tri_tri)
 
 # main()
 # main2()
 # main3()
-cProfile.run("main4()")
+# main4()
+# main4_5()
 # main5()
-

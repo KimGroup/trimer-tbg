@@ -1,1 +1,6 @@
 gui/node_modules
+*.dat
+*.npy
+slurm-*.out
+*.png
+*.pyc
