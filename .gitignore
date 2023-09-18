@@ -4,3 +4,4 @@ gui/node_modules
 slurm-*.out
 *.png
 *.pyc
+*.out

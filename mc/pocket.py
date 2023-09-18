@@ -6,8 +6,8 @@ import random
 import matplotlib.patches as mpatches
 import numpy as np
 
-height = 48
-width = 48
+height = 108
+width = 108
 
 if height != width:
     print("warning: XY or X'Y' reflections only work with square dims")
@@ -108,8 +108,8 @@ def show_tiling(ax, sample, color="blue", wf="hexa"):
                                              ec='k'))
 
     ax.axis("off")
-    ax.set_xlim([0, 24*3])
-    ax.set_ylim([0, 16*3])
+    ax.set_xlim([0, 24])
+    ax.set_ylim([0, 16])
     ax.set_aspect("equal")
 
 
@@ -152,6 +152,10 @@ def rand_symmetry():
 
 def recenter_tri(pos):
     return (pos[0] % width, pos[1] % height, pos[2])
+
+def center_tri(c, pos):
+    r = recenter_mono((pos[0]-c[0]+width//2, pos[1]-c[1]+height//2))
+    return r[0]-width//2, r[1]-height//2, pos[2]
 
 def recenter_mono(pos):
     return (pos[0] % width, pos[1] % height)
@@ -450,6 +454,9 @@ def pocket_move(sample):
                     del A[1][occ]
                     pocket[1][occ] = overlap
 
+            print(len(A[0]), len(A[1]), len(Abar[0]), len(Abar[1]))
+        
+
     return (A[0] + Abar[0], A[1] | Abar[1]), len(Abar[0])
 
 
@@ -589,11 +596,15 @@ def monomer_monomer(pos):
 
 def trimer_trimer(sample):
     pos, occ = sample
-    for _ in range(400):
+    for _ in range(width * height // 10):
         ij = np.random.randint(len(pos), size=2)
         i, j = ij[0], ij[1]
-        if (pos[i][2] != 0 or pos[j][2] != 0): continue
-        yield center_mono((0, 0), (pos[i][0]-pos[j][0], pos[i][1]-pos[j][1]))
+        if pos[j][2] == 1:
+            ni = apply_symmetry(("R", (0, 0, 2)), pos[i])
+            nj = apply_symmetry(("R", (0, 0, 2)), pos[j])
+            yield center_tri((0, 0), (ni[0]-nj[0], ni[1]-nj[1], ni[2]))
+        else:
+            yield center_tri((0, 0), (pos[i][0]-pos[j][0], pos[i][1]-pos[j][1], pos[i][2]))
 
 def monomer_dimer(pos):
     pos = list(pos)
@@ -621,51 +632,59 @@ def monomer_dimer(pos):
 
 
 def main5():
-    pos = []
-    for i in range(0, height, 3):
-        for j in range(0, width, 3):
-            pos.append((i, j, 0))
-            pos.append((i+1, j+1, 0))
-            pos.append((i+2, j+2, 0))
-    pos.remove((0, 0, 0))
+    global width, height
+    for x in np.arange(6, 18, 6):
+        width = x
+        height = x
 
-    sample = (pos, gen_occ(pos))
+        pos = []
+        for i in range(0, height, 3):
+            for j in range(0, width, 3):
+                pos.append((i, j, 0))
+                pos.append((i+1, j+1, 0))
+                pos.append((i+2, j+2, 0))
+        pos.remove((0, 0, 0))
 
-    fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-    draw_hexalattice(ax)
-    show_tiling(ax, sample)
-    plt.show()
+        sample = (pos, gen_occ(pos))
 
-    mono_di = {}
-    tri_tri = {}
+        mono_di = {}
+        tri_tri = {}
+        mono_mono = {}
 
-    for i in range(1000):
-        sample, _ = pocket_move(sample)
+        for i in range(10):
+            sample, _ = pocket_move(sample)
 
+        for i in range(500000):
+            if i % 1000 == 0:
+                print(i)
 
-    for i in range(40000):
-        if i % 1000 == 0:
-            print(i)
-        sample, _ = pocket_move(sample)
+            sample, _ = pocket_move(sample)
 
-        pos = find_monomers(sample)
+            pos = find_monomers(sample)
 
-        # for dist in monomer_dimer(pos):
-        #     if dist in mono_di:
-        #         mono_di[dist] += 1
-        #     else:
-        #         mono_di[dist] = 1
+            if i % 5 == 0:
+                # for dist in monomer_monomer(pos):
+                #     if dist in mono_mono:
+                #         mono_mono[dist] += 1
+                #     else:
+                #         mono_mono[dist] = 1
 
-        if i % 10 == 0:
-            for dist in trimer_trimer(sample):
-                if dist in tri_tri:
-                    tri_tri[dist] += 1
-                else:
-                    tri_tri[dist] = 1
+                # for dist in monomer_dimer(pos):
+                #     if dist in mono_di:
+                #         mono_di[dist] += 1
+                #     else:
+                #         mono_di[dist] = 1
 
-    print(tri_tri)
-    # np.save("48x48-3-100000-mono-di", mono_di)
-    np.save("48x48-3-100000-tri-tri", tri_tri)
+                for dist in trimer_trimer(sample):
+                    if dist in tri_tri:
+                        tri_tri[dist] += 1
+                    else:
+                        tri_tri[dist] = 1
+
+        print(tri_tri)
+        # np.save(f"data/{x}x{x}-3-500000.3-mono-mono", mono_mono)
+        np.save(f"data/{x}x{x}-3-500000.5-tri-tri-2", tri_tri)
+        # np.save(f"data/{x}x{x}-3-100000-mono-di", mono_di)
 
 # main()
 # main2()
