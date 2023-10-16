@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import cProfile
 import random
 import matplotlib.patches as mpatches
+import matplotlib.collections as mcollections
 import numpy as np
 
 height = 108
@@ -78,38 +79,35 @@ def draw_duallattice(ax, color=None, ls="-"):
             [xy[1] + R/2, xy[1] + R], color=color, lw=1, zorder=-0.5)
 
 
-def show_tiling(ax, sample, color="blue", wf="hexa"):
+def show_tiling(ax, sample, color="blue", wf="hexa", zoom=1):
     pos, occ = sample
+    patches = []
     for x, y, s in pos:
         if wf == "tri":
             if s == 0:
                 xy = trilatloc((x, y), "up")
                 polygon = mpatches.RegularPolygon(xy, numVertices=3,
                                                   radius=R,
-                                                  orientation=0,
-                                                  fc=color)
+                                                  orientation=0)
             else:
                 xy = trilatloc((x, y), "down")
                 polygon = mpatches.RegularPolygon(xy, numVertices=3,
                                                   radius=R,
-                                                  orientation=np.pi,
-                                                  fc=color)
-            ax.add_patch(polygon)
+                                                  orientation=np.pi)
+            patches.append(polygon)
         else:
             if s == 0:
                 xy = trilatloc((x, y), "up")
-                ax.add_patch(mpatches.Circle(xy, radius=R/3,
-                                             facecolor=color,
-                                             ec='k'))
+                polygon = mpatches.Circle(xy, radius=R/3)
             else:
                 xy = trilatloc((x, y), "down")
-                ax.add_patch(mpatches.Circle(xy, radius=R/3,
-                                             facecolor=color,
-                                             ec='k'))
+                polygon = mpatches.Circle(xy, radius=R/3)
+            patches.append(polygon)
+    ax.add_collection(mcollections.PatchCollection(patches, edgecolors="black", facecolors=color))
 
     ax.axis("off")
-    ax.set_xlim([0, 24])
-    ax.set_ylim([0, 16])
+    ax.set_xlim([0, width*1.5*R*2*zoom])
+    ax.set_ylim([0, height*np.sqrt(3)/2*R*2*zoom])
     ax.set_aspect("equal")
 
 
@@ -454,8 +452,6 @@ def pocket_move(sample):
                     del A[1][occ]
                     pocket[1][occ] = overlap
 
-            print(len(A[0]), len(A[1]), len(Abar[0]), len(Abar[1]))
-        
 
     return (A[0] + Abar[0], A[1] | Abar[1]), len(Abar[0])
 
@@ -633,7 +629,8 @@ def monomer_dimer(pos):
 
 def main5():
     global width, height
-    for x in np.arange(6, 18, 6):
+    # for x in np.arange(6, 18, 6):
+    for x in [108]:
         width = x
         height = x
 
@@ -659,8 +656,9 @@ def main5():
                 print(i)
 
             sample, _ = pocket_move(sample)
+            print(i)
 
-            pos = find_monomers(sample)
+            # pos = find_monomers(sample)
 
             if i % 5 == 0:
                 # for dist in monomer_monomer(pos):

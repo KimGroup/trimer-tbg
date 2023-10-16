@@ -1,3 +1,4 @@
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -40,6 +41,9 @@ struct MonomerPos
 	{
 		return MonomerPos(pmod(x - pos.x + w / 2, w) - w / 2, pmod(y - pos.y + h / 2, h) - h / 2);
 	}
+
+	uint32_t index(int w) const { return x + y * w; }
+	static MonomerPos from_index(uint32_t index, int w) { return MonomerPos(index % w, index / w); }
 
 	MonomerPos operator-(const MonomerPos& other) const { return MonomerPos(x - other.x, y - other.y); }
 	MonomerPos operator+(const MonomerPos& other) const { return MonomerPos(x + other.x, y + other.y); }
@@ -110,6 +114,13 @@ struct TrimerPos
 		return TrimerPos(pmod(x - pos.x + w / 2, w) - w / 2, pmod(y - pos.y + h / 2, h) - h / 2, s);
 	}
 
+	uint32_t index(int w) const { return (x + y * w) * 2 + s; }
+	static TrimerPos from_index(uint32_t index, int w)
+	{
+		uint32_t half = index / 2;
+		return TrimerPos(half % w, half / w, index % 2);
+	}
+
 	bool operator==(const TrimerPos& other) const { return x == other.x && y == other.y && s == other.s; }
 };
 
@@ -142,60 +153,73 @@ std::ostream& operator<<(std::ostream& o, const TrimerPos& v)
 	return o << "(" << v.x << "," << v.y << "," << (int)v.s << ")";
 }
 
-std::minstd_rand rng;
 struct Sample
 {
 	int32_t w, h;
 
-	std::vector<TrimerPos> trimers;
-	std::unordered_map<MonomerPos, TrimerPos> occupations;
+	std::vector<bool> trimer_occupations;
+	std::vector<TrimerPos> vertex_occupations;
 
-	Sample(int32_t w, int32_t h) : w(w), h(h) {}
-
-	Sample(int32_t w, int32_t h, const std::vector<TrimerPos>& trimers) : w(w), h(h), trimers(trimers)
+	Sample(int32_t w, int32_t h) : w(w), h(h)
 	{
-		regenerate_occupation();
+		trimer_occupations = std::vector<bool>(w * h * 2, false);
+		vertex_occupations = std::vector<TrimerPos>(w * h, TrimerPos(0, 0, 2));
 	}
-	Sample(int32_t w, int32_t h, std::vector<TrimerPos>&& trimers) : w(w), h(h), trimers(trimers)
+
+	Sample(int32_t w, int32_t h, const std::vector<TrimerPos>& trimers) : w(w), h(h)
 	{
+		trimer_occupations = std::vector<bool>(w * h * 2, false);
+		for (auto& i : trimers)
+		{
+			trimer_occupations[i.index(w)] = true;
+		}
 		regenerate_occupation();
 	}
 
 	void regenerate_occupation()
 	{
-		occupations.clear();
-		for (auto& i : trimers)
+		vertex_occupations = std::vector<TrimerPos>(w * h, TrimerPos(0, 0, 2));
+
+		for (size_t i = 0; i < trimer_occupations.size(); i++)
 		{
-			for (auto& occ : i.get_occupations(w, h))
+			if (trimer_occupations[i])
 			{
-				occupations[occ] = i;
+				auto tri = TrimerPos::from_index(i, w);
+
+				for (auto& occ : tri.get_occupations(w, h))
+				{
+					vertex_occupations[occ.index(w)] = tri;
+				}
 			}
 		}
 	}
 
 	double trimer_correlation(TrimerPos d) const
 	{
-		std::unordered_set<TrimerPos> tris(trimers.begin(), trimers.end());
-
 		int total = 0;
 		int found = 0;
 
-		for (auto& p1 : tris)
+		for (size_t i = 0; i < trimer_occupations.size(); i++)
 		{
-			TrimerPos n;
-			if (p1.s == 1)
+			if (trimer_occupations[i])
 			{
-				n = TrimerPos(p1.x + d.x, p1.y + d.y, p1.s).reflect(MonomerPos(0, 0), 2, w, h);
-				n.s = d.s;
-			}
-			else
-			{
-				n = TrimerPos(p1.x + d.x, p1.y + d.y, d.s);
-			}
+				TrimerPos p1 = TrimerPos::from_index(i, w);
+				TrimerPos n;
 
-			if (tris.contains(n.canonical(w, h)))
-				found++;
-			total++;
+				if (p1.s == 1)
+				{
+					n = TrimerPos(p1.x + d.x, p1.y + d.y, p1.s).reflect(MonomerPos(0, 0), 2, w, h);
+					n.s = d.s;
+				}
+				else
+				{
+					n = TrimerPos(p1.x + d.x, p1.y + d.y, d.s);
+				}
+
+				if (trimer_occupations[n.canonical(w, h).index(w)])
+					found++;
+				total++;
+			}
 		}
 
 		return (double)found / total;
@@ -208,7 +232,7 @@ struct Sample
 		{
 			for (int j = 0; j < h; j++)
 			{
-				if (!occupations.contains(MonomerPos(i, j)))
+				if (vertex_occupations[MonomerPos(i, j).index(w)].s == 2)
 				{
 					r.emplace_back(i, j);
 				}
@@ -216,60 +240,74 @@ struct Sample
 		}
 		return r;
 	}
-};
 
-Sample pocket_move(Sample&& s)
-{
-	auto seed = s.trimers[rng() % s.trimers.size()];
-
-	std::vector<TrimerPos> pocket{seed}, Abar;
-	std::unordered_map<MonomerPos, TrimerPos> Abar_occ;
-
-	s.trimers.erase(std::find(s.trimers.begin(), s.trimers.end(), seed));
-	for (auto& i : seed.get_occupations(s.w, s.h))
+	template <typename Rng> void pocket_move(Rng& rng)
 	{
-		s.occupations.erase(i);
-	}
-
-	auto symc = MonomerPos(rng() % s.w, rng() % s.h);
-	auto syma = rng() % 6;
-
-	while (pocket.size() > 0)
-	{
-		auto el = pocket[rng() % pocket.size()];
-		auto moved = el.reflect(symc, syma, s.w, s.h);
-
-		pocket.erase(std::find(pocket.begin(), pocket.end(), el));
-		Abar.push_back(moved);
-
-		for (auto& i : moved.get_occupations(s.w, s.h))
+		TrimerPos seed(0, 0, 2);
+		while (seed.s == 2)
 		{
-			Abar_occ[i] = moved;
-
-			if (s.occupations.contains(i))
+			uint32_t candidate = rng() % trimer_occupations.size();
+			if (trimer_occupations[candidate])
 			{
-				auto overlap = s.occupations[i];
-				s.trimers.erase(std::find(s.trimers.begin(), s.trimers.end(), overlap));
+				seed = TrimerPos::from_index(candidate, w);
+			}
+		}
 
-				pocket.push_back(overlap);
-				for (auto& j : overlap.get_occupations(s.w, s.h))
+		std::vector<TrimerPos> pocket{seed}, Abar;
+		std::vector<std::pair<MonomerPos, TrimerPos>> Abar_entries;
+
+		trimer_occupations[seed.index(w)] = false;
+		for (auto& i : seed.get_occupations(w, h))
+		{
+			vertex_occupations[i.index(w)] = TrimerPos(0, 0, 2);
+		}
+
+		auto symc = MonomerPos(rng() % w, rng() % h);
+		auto syma = rng() % 6;
+
+		while (pocket.size() > 0)
+		{
+			auto el = pocket[rng() % pocket.size()];
+			auto moved = el.reflect(symc, syma, w, h);
+
+			pocket.erase(std::find(pocket.begin(), pocket.end(), el));
+			Abar.push_back(moved);
+
+			for (auto& i : moved.get_occupations(w, h))
+			{
+				Abar_entries.push_back(std::make_pair(i, moved));
+
+				if (vertex_occupations[i.index(w)].s < 2)
 				{
-					s.occupations.erase(j);
+					auto overlap = vertex_occupations[i.index(w)];
+					trimer_occupations[overlap.index(w)] = false;
+
+					pocket.push_back(overlap);
+					for (auto& j : overlap.get_occupations(w, h))
+					{
+						vertex_occupations[j.index(w)] = TrimerPos(0, 0, 2);
+					}
 				}
 			}
 		}
-	}
 
-	Sample new_sample(s.w, s.h);
-	new_sample.trimers = std::move(s.trimers);
-	new_sample.trimers.insert(new_sample.trimers.end(), Abar.begin(), Abar.end());
-	new_sample.occupations = std::move(s.occupations);
-	new_sample.occupations.insert(Abar_occ.begin(), Abar_occ.end());
-	return new_sample;
-}
+		for (auto& i : Abar)
+		{
+			trimer_occupations[i.index(w)] = true;
+		}
+		for (auto& pair : Abar_entries)
+		{
+			vertex_occupations[pair.first.index(w)] = pair.second;
+		}
+	}
+};
 
 int main()
 {
+	std::minstd_rand rng;
+	rng.seed(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+				 .count());
+
 	for (int s = 108; s < 109; s += 6)
 	{
 		std::vector<TrimerPos> pos;
@@ -288,16 +326,16 @@ int main()
 		// ss << "data/" << s << "x" << s << "-3-500000-monomers.dat";
 		// std::ofstream of(ss.str());
 
-		ss << "data/" << s << "x" << s << "-3-20000000-trimers-cut.dat";
+		ss << "data/" << s << "x" << s << "-3-5000000-trimers-cut.dat";
 		std::ofstream of(ss.str());
 
 		// ss << "data/" << s << "x" << s << "-3-1000-trimers.dat";
 		// std::ofstream of(ss.str());
 
 		auto sample = Sample(s, s, pos);
-		for (int i = 0; i < 20000000; i++)
+		for (int i = 0; i < 5000000; i++)
 		{
-			sample = pocket_move(std::move(sample));
+			sample.pocket_move(rng);
 			if (i % 1000 == 0)
 			{
 				std::cout << s << " " << i << std::endl;
@@ -319,9 +357,12 @@ int main()
 			of << std::endl;
 
 			// trimer positions
-			// for (auto& j : sample.trimers)
+			// for (size_t j = 0; j < sample.trimer_occupations.size(); j++)
 			// {
-			// 	of << j << " ";
+			// 	if (sample.trimer_occupations[j])
+			// 	{
+			// 		of << TrimerPos::from_index(j, sample.w) << " ";
+			// 	}
 			// }
 			// of << std::endl;
 		}
