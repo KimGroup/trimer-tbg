@@ -1,6 +1,7 @@
 #include <fstream>
 #include <iostream>
 #include <random>
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -44,19 +45,6 @@ struct MonomerPos
 	MonomerPos operator+(const MonomerPos& other) const { return MonomerPos(x + other.x, y + other.y); }
 	bool operator==(const MonomerPos& other) const { return x == other.x && y == other.y; }
 };
-
-namespace std
-{
-template <> struct hash<MonomerPos>
-{
-	std::size_t operator()(const MonomerPos& x) const
-	{
-		std::size_t seed = std::hash<int32_t>()(x.x);
-		seed ^= std::hash<int32_t>()(x.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		return seed;
-	}
-};
-} // namespace std
 
 struct TrimerPos
 {
@@ -125,12 +113,36 @@ struct TrimerPos
 	bool operator==(const TrimerPos& other) const { return x == other.x && y == other.y && s == other.s; }
 };
 
+namespace std
+{
+template <> struct hash<MonomerPos>
+{
+	std::size_t operator()(const MonomerPos& x) const
+	{
+		std::size_t seed = std::hash<int32_t>()(x.x);
+		seed ^= std::hash<int32_t>()(x.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		return seed;
+	}
+};
+template <> struct hash<TrimerPos>
+{
+	std::size_t operator()(const TrimerPos& x) const
+	{
+		std::size_t seed = std::hash<int32_t>()(x.x);
+		seed ^= std::hash<int32_t>()(x.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<int32_t>()(x.s) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		return seed;
+	}
+};
+} // namespace std
+
 std::ostream& operator<<(std::ostream& o, const MonomerPos& v) { return o << "(" << v.x << "," << v.y << ")"; }
 std::ostream& operator<<(std::ostream& o, const TrimerPos& v)
 {
 	return o << "(" << v.x << "," << v.y << "," << (int)v.s << ")";
 }
 
+std::minstd_rand rng;
 struct Sample
 {
 	int32_t w, h;
@@ -161,6 +173,34 @@ struct Sample
 		}
 	}
 
+	double trimer_correlation(TrimerPos d) const
+	{
+		std::unordered_set<TrimerPos> tris(trimers.begin(), trimers.end());
+
+		int total = 0;
+		int found = 0;
+
+		for (auto& p1 : tris)
+		{
+			TrimerPos n;
+			if (p1.s == 1)
+			{
+				n = TrimerPos(p1.x + d.x, p1.y + d.y, p1.s).reflect(MonomerPos(0, 0), 2, w, h);
+				n.s = d.s;
+			}
+			else
+			{
+				n = TrimerPos(p1.x + d.x, p1.y + d.y, d.s);
+			}
+
+			if (tris.contains(n.canonical(w, h)))
+				found++;
+			total++;
+		}
+
+		return (double)found / total;
+	}
+
 	std::vector<MonomerPos> all_monomers() const
 	{
 		std::vector<MonomerPos> r;
@@ -178,18 +218,17 @@ struct Sample
 	}
 };
 
-std::minstd_rand rng;
-Sample pocket_move(const Sample& s)
+Sample pocket_move(Sample&& s)
 {
 	auto seed = s.trimers[rng() % s.trimers.size()];
 
-	std::vector<TrimerPos> pocket{seed}, Abar, A(s.trimers);
-	std::unordered_map<MonomerPos, TrimerPos> Abar_occ, A_occ(s.occupations);
+	std::vector<TrimerPos> pocket{seed}, Abar;
+	std::unordered_map<MonomerPos, TrimerPos> Abar_occ;
 
-	A.erase(std::find(A.begin(), A.end(), seed));
+	s.trimers.erase(std::find(s.trimers.begin(), s.trimers.end(), seed));
 	for (auto& i : seed.get_occupations(s.w, s.h))
 	{
-		A_occ.erase(i);
+		s.occupations.erase(i);
 	}
 
 	auto symc = MonomerPos(rng() % s.w, rng() % s.h);
@@ -207,52 +246,84 @@ Sample pocket_move(const Sample& s)
 		{
 			Abar_occ[i] = moved;
 
-			if (A_occ.contains(i))
+			if (s.occupations.contains(i))
 			{
-				auto overlap = A_occ[i];
-				A.erase(std::find(A.begin(), A.end(), overlap));
+				auto overlap = s.occupations[i];
+				s.trimers.erase(std::find(s.trimers.begin(), s.trimers.end(), overlap));
 
 				pocket.push_back(overlap);
 				for (auto& j : overlap.get_occupations(s.w, s.h))
 				{
-					A_occ.erase(j);
+					s.occupations.erase(j);
 				}
 			}
 		}
 	}
 
 	Sample new_sample(s.w, s.h);
-	new_sample.trimers.insert(new_sample.trimers.end(), A.begin(), A.end());
+	new_sample.trimers = std::move(s.trimers);
 	new_sample.trimers.insert(new_sample.trimers.end(), Abar.begin(), Abar.end());
-	new_sample.occupations.insert(A_occ.begin(), A_occ.end());
+	new_sample.occupations = std::move(s.occupations);
 	new_sample.occupations.insert(Abar_occ.begin(), Abar_occ.end());
 	return new_sample;
 }
 
 int main()
 {
-	int s = 24;
-	std::vector<TrimerPos> pos;
-	for (int i = 0; i < s; i += 3)
+	for (int s = 108; s < 109; s += 6)
 	{
-		for (int j = 0; j < s; j += 3)
+		std::vector<TrimerPos> pos;
+		for (int i = 0; i < s; i += 3)
 		{
-			if (i > 0 || j > 0)
-				pos.emplace_back(i, j, 0);
-			pos.emplace_back(i + 1, j + 1, 0);
-			pos.emplace_back(i + 2, j + 2, 0);
+			for (int j = 0; j < s; j += 3)
+			{
+				if (i > 0 || j > 0)
+					pos.emplace_back(i, j, 0);
+				pos.emplace_back(i + 1, j + 1, 0);
+				pos.emplace_back(i + 2, j + 2, 0);
+			}
 		}
-	}
 
-	std::ofstream of("pocket.out");
+		std::stringstream ss;
+		// ss << "data/" << s << "x" << s << "-3-500000-monomers.dat";
+		// std::ofstream of(ss.str());
 
-	auto sample = Sample(s, s, pos);
-	for (int i = 0; i < 1000; i++)
-	{
-		sample = pocket_move(sample);
+		ss << "data/" << s << "x" << s << "-3-20000000-trimers-cut.dat";
+		std::ofstream of(ss.str());
 
-		for (auto& i : sample.trimers)
-			of << i << " ";
-		of << std::endl;
+		// ss << "data/" << s << "x" << s << "-3-1000-trimers.dat";
+		// std::ofstream of(ss.str());
+
+		auto sample = Sample(s, s, pos);
+		for (int i = 0; i < 20000000; i++)
+		{
+			sample = pocket_move(std::move(sample));
+			if (i % 1000 == 0)
+			{
+				std::cout << s << " " << i << std::endl;
+			}
+
+			// monomer positions
+			// auto mono = sample.all_monomers();
+			// for (uint j = 0; j < mono.size(); j++)
+			// {
+			// 	of << mono[j];
+			// }
+			// of << std::endl;
+
+			// trimer cut
+			for (int j = 1; j <= s / 2; j++)
+			{
+				of << sample.trimer_correlation(TrimerPos(j, 0, 0)) << " ";
+			}
+			of << std::endl;
+
+			// trimer positions
+			// for (auto& j : sample.trimers)
+			// {
+			// 	of << j << " ";
+			// }
+			// of << std::endl;
+		}
 	}
 }
