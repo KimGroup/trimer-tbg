@@ -241,6 +241,69 @@ struct Sample
 		return r;
 	}
 
+	std::vector<MonomerPos> dimer_monomer_correlation() const
+	{
+		std::vector<MonomerPos> ret;
+
+		std::vector<MonomerPos> monos = all_monomers();
+
+		std::vector<std::pair<MonomerPos, int>> dimers;
+		std::vector<MonomerPos> disjoint_monos;
+		std::unordered_set<MonomerPos> connected_monos;
+
+		for (int i = 0; i < monos.size(); i++)
+		{
+			bool found = false;
+			for (int j = i + 1; j < monos.size(); j++)
+			{
+				MonomerPos origin;
+				int rotation = -1;
+
+				const std::vector<int> dx = {1, 0, -1};
+				const std::vector<int> dy = {0, 1, 1};
+
+				for (int r = 0; r < 3; r++)
+				{
+					if (monos[i].x + dx[r] == monos[j].x && monos[i].y + dy[r] == monos[j].y)
+					{
+						origin = monos[i];
+						rotation = r;
+						break;
+					}
+					if (monos[j].x + dx[r] == monos[i].x && monos[j].y + dy[r] == monos[i].y)
+					{
+						origin = monos[j];
+						rotation = r;
+						break;
+					}
+				}
+
+				if (rotation >= 0)
+				{
+					dimers.emplace_back(origin, rotation);
+					found = true;
+					connected_monos.insert(monos[i]);
+					connected_monos.insert(monos[j]);
+				}
+			}
+
+			if (!found && !connected_monos.contains(monos[i]))
+			{
+				disjoint_monos.push_back(monos[i]);
+			}
+		}
+
+		for (auto& i : dimers)
+		{
+			for (auto& j : disjoint_monos)
+			{
+				ret.push_back(j.center_at(i.first, w, h).rotate(-i.second).canonical(w, h));
+			}
+		}
+
+		return ret;
+	}
+
 	template <typename Rng> void pocket_move(Rng& rng)
 	{
 		TrimerPos seed(0, 0, 2);
@@ -308,7 +371,7 @@ int main()
 	rng.seed(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
 				 .count());
 
-	for (int s = 108; s < 109; s += 6)
+	for (int s = 12; s < 108; s += 12)
 	{
 		std::vector<TrimerPos> pos;
 		for (int i = 0; i < s; i += 3)
@@ -316,24 +379,33 @@ int main()
 			for (int j = 0; j < s; j += 3)
 			{
 				if (i > 0 || j > 0)
+				{
 					pos.emplace_back(i, j, 0);
+				}
 				pos.emplace_back(i + 1, j + 1, 0);
 				pos.emplace_back(i + 2, j + 2, 0);
 			}
 		}
 
 		std::stringstream ss;
-		// ss << "data/" << s << "x" << s << "-3-500000-monomers.dat";
+
+		// ss << "data/" << s << "x" << s << "-3-3000000-monomers.dat";
+		// std::ofstream of1(ss.str());
+
+		ss.str("");
+		ss << "data/" << s << "x" << s << "-3-2000000-trimers-cut.dat";
+		std::ofstream of2(ss.str());
+
+		// ss.str("");
+		// ss << "data/" << s << "x" << s << "-6-10000000-mono-di.dat";
 		// std::ofstream of(ss.str());
 
-		ss << "data/" << s << "x" << s << "-3-5000000-trimers-cut.dat";
-		std::ofstream of(ss.str());
-
+		// ss.str("");
 		// ss << "data/" << s << "x" << s << "-3-1000-trimers.dat";
 		// std::ofstream of(ss.str());
 
 		auto sample = Sample(s, s, pos);
-		for (int i = 0; i < 5000000; i++)
+		for (int i = 0; i < 2000000; i++)
 		{
 			sample.pocket_move(rng);
 			if (i % 1000 == 0)
@@ -345,16 +417,16 @@ int main()
 			// auto mono = sample.all_monomers();
 			// for (uint j = 0; j < mono.size(); j++)
 			// {
-			// 	of << mono[j];
+			// 	of1 << mono[j] << " ";
 			// }
-			// of << std::endl;
+			// of1 << std::endl;
 
 			// trimer cut
 			for (int j = 1; j <= s / 2; j++)
 			{
-				of << sample.trimer_correlation(TrimerPos(j, 0, 0)) << " ";
+				of2 << sample.trimer_correlation(TrimerPos(j, 0, 0)) << " ";
 			}
-			of << std::endl;
+			of2 << std::endl;
 
 			// trimer positions
 			// for (size_t j = 0; j < sample.trimer_occupations.size(); j++)
@@ -363,6 +435,14 @@ int main()
 			// 	{
 			// 		of << TrimerPos::from_index(j, sample.w) << " ";
 			// 	}
+			// }
+			// of << std::endl;
+
+			// mono-di
+			// auto mono_di = sample.dimer_monomer_correlation();
+			// for (auto& i : mono_di)
+			// {
+			// 	of << i << " ";
 			// }
 			// of << std::endl;
 		}
