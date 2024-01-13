@@ -220,27 +220,44 @@ std::ostream& operator<<(std::ostream& o, const TrimerPos& v)
 
 struct Sample
 {
+	static const std::array<MonomerPos, 6> j4_neighbor_list_s0;
+	static const std::array<MonomerPos, 6> j4_neighbor_list_s1;
+
 	int32_t w, h;
 
 	std::vector<bool> trimer_occupations;
 	std::vector<Cluster> vertex_occupations;
-	float energy;
+
+	int cluster_overlaps;
+	int j4_pairs;
 
 	Sample(int32_t w, int32_t h) : w(w), h(h)
 	{
-		energy = 0;
+		cluster_overlaps = 0;
+		j4_pairs = 0;
 		trimer_occupations = std::vector<bool>(w * h * 2, false);
 		vertex_occupations = std::vector<Cluster>(w * h);
 	}
 
 	Sample(int32_t w, int32_t h, const std::vector<TrimerPos>& trimers) : w(w), h(h)
 	{
-		energy = 0;
 		trimer_occupations = std::vector<bool>(w * h * 2, false);
 		for (auto& i : trimers)
 			trimer_occupations[i.index(w)] = true;
 
 		regenerate_occupation();
+		recalculate_clusters();
+		recalculate_j4();
+	}
+
+	Sample(Sample&& other)
+	{
+		w = other.w;
+		h = other.h;
+		cluster_overlaps = other.cluster_overlaps;
+		j4_pairs = other.j4_pairs;
+		trimer_occupations = std::move(other.trimer_occupations);
+		vertex_occupations = std::move(other.vertex_occupations);
 	}
 
 	void regenerate_occupation()
@@ -257,6 +274,50 @@ struct Sample
 					vertex_occupations[occ.index(w)].occupations |= rel.occupations;
 			}
 		}
+	}
+
+	void recalculate_clusters()
+	{
+		cluster_overlaps = 0;
+		for (const auto& occ : vertex_occupations)
+		{
+			auto popc = __builtin_popcount(occ.occupations);
+			cluster_overlaps += popc * popc;
+		}
+	}
+
+	void recalculate_j4()
+	{
+		j4_pairs = 0;
+
+		for (int x = 0; x < w; x++)
+		{
+			for (int y = 0; y < h; y++)
+			{
+				if (trimer_occupations[TrimerPos(x, y, 0).index(w)])
+					for (auto& rel : j4_neighbor_list_s0)
+						if (trimer_occupations[TrimerPos(x + rel.x, y + rel.y, 1).index(w)])
+							j4_pairs++;
+			}
+		}
+	}
+
+	int j4_neighbors_of(const TrimerPos& pos)
+	{
+		int pairs = 0;
+		if (pos.s == 0)
+		{
+			for (auto& rel : j4_neighbor_list_s0)
+				if (trimer_occupations[TrimerPos(pos.x + rel.x, pos.y + rel.y, 1).index(w)])
+					pairs++;
+		}
+		else
+		{
+			for (auto& rel : j4_neighbor_list_s1)
+				if (trimer_occupations[TrimerPos(pos.x + rel.x, pos.y + rel.y, 0).index(w)])
+					pairs++;
+		}
+		return pairs;
 	}
 
 	double trimer_correlation(TrimerPos d) const
@@ -369,16 +430,58 @@ struct Sample
 		return ret;
 	}
 
-	template <typename Rng> void pocket_move(Rng& rng)
+	template <typename Rng> void metropolis_move(Rng& rng)
 	{
 		TrimerPos seed(0, 0, 2);
 		while (seed.s == 2)
 		{
 			uint32_t candidate = rng() % trimer_occupations.size();
 			if (trimer_occupations[candidate])
-			{
 				seed = TrimerPos::from_index(candidate, w);
-			}
+		}
+		TrimerPos dest(0, 0, 2);
+		while (dest.s == 2)
+		{
+			uint32_t candidate = rng() % trimer_occupations.size();
+			if (!trimer_occupations[candidate])
+				dest = TrimerPos::from_index(candidate, w);
+		}
+
+		int dj4 = j4_neighbors_of(dest) - j4_neighbors_of(seed);
+		int dcluster = 0;
+
+		for (auto& [occ, rel] : seed.get_occupations_wrel())
+		{
+			auto& popc = vertex_occupations[occ.index(w)].occupations;
+			ASSERT(popc & rel);
+
+			// (x-1)^2 - x^2 = 1 - 2x
+			dcluster += 1 - 2 * popc;
+			popc &= ~rel;
+		}
+		for (auto& [occ, rel] : dest.get_occupations_wrel())
+		{
+			auto& popc = vertex_occupations[occ.index(w)].occupations;
+
+			// x^2 - (x-1)^2 = 2x - 1
+			dcluster += 2 * popc - 1;
+			popc |= rel;
+		}
+
+		j4_pairs += dj4;
+		cluster_overlaps += dcluster;
+	}
+
+	template <typename Rng> void pocket_move(Rng& rng)
+	{
+		ASSERT(cluster_overlaps == 0)
+
+		TrimerPos seed(0, 0, 2);
+		while (seed.s == 2)
+		{
+			uint32_t candidate = rng() % trimer_occupations.size();
+			if (trimer_occupations[candidate])
+				seed = TrimerPos::from_index(candidate, w);
 		}
 
 		std::vector<TrimerPos> pocket{seed}, Abar;
@@ -432,6 +535,10 @@ struct Sample
 		}
 	}
 };
+const std::array<MonomerPos, 6> Sample::j4_neighbor_list_s0 = {MonomerPos{0, 1}, {1, 0},  {0, -2},
+															   {1, -2},			 {-2, 0}, {-2, 1}};
+const std::array<MonomerPos, 6> Sample::j4_neighbor_list_s1 = {MonomerPos{0, 2}, {-1, 2}, {2, 0},
+															   {2, -1},			 {0, -1}, {-1, 0}};
 
 void sim()
 {
