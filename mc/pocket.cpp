@@ -16,8 +16,19 @@ void assert_fail() { exit(0); }
 		std::cout << "assertion failed at " << __LINE__ << std::endl;                                                  \
 		assert_fail();                                                                                                 \
 	}
+#define TEST_ASSERT(x)                                                                                                 \
+	if (!(x))                                                                                                          \
+	{                                                                                                                  \
+		std::cout << "test failed at " << __LINE__ << #x << std::endl;                                                 \
+	}                                                                                                                  \
+	else                                                                                                               \
+	{                                                                                                                  \
+		std::cout << "test passed at " << __LINE__ << #x << std::endl;                                                 \
+	}
+
 #else
 #define ASSERT(x)
+#define TEST_ASSERT(x)
 #endif
 
 int32_t pmod(int32_t a, int32_t b) { return (a % b + b) % b; }
@@ -228,13 +239,13 @@ struct Sample
 	std::vector<bool> trimer_occupations;
 	std::vector<Cluster> vertex_occupations;
 
-	int cluster_overlaps;
-	int j4_pairs;
+	int cluster_energy;
+	int j4_energy;
 
 	Sample(int32_t w, int32_t h) : w(w), h(h)
 	{
-		cluster_overlaps = 0;
-		j4_pairs = 0;
+		cluster_energy = 0;
+		j4_energy = 0;
 		trimer_occupations = std::vector<bool>(w * h * 2, false);
 		vertex_occupations = std::vector<Cluster>(w * h);
 	}
@@ -248,16 +259,6 @@ struct Sample
 		regenerate_occupation();
 		recalculate_clusters();
 		recalculate_j4();
-	}
-
-	Sample(Sample&& other)
-	{
-		w = other.w;
-		h = other.h;
-		cluster_overlaps = other.cluster_overlaps;
-		j4_pairs = other.j4_pairs;
-		trimer_occupations = std::move(other.trimer_occupations);
-		vertex_occupations = std::move(other.vertex_occupations);
 	}
 
 	void regenerate_occupation()
@@ -278,17 +279,17 @@ struct Sample
 
 	void recalculate_clusters()
 	{
-		cluster_overlaps = 0;
+		cluster_energy = 0;
 		for (const auto& occ : vertex_occupations)
 		{
 			auto popc = __builtin_popcount(occ.occupations);
-			cluster_overlaps += popc * popc;
+			cluster_energy += popc * popc;
 		}
 	}
 
 	void recalculate_j4()
 	{
-		j4_pairs = 0;
+		j4_energy = 0;
 
 		for (int x = 0; x < w; x++)
 		{
@@ -296,8 +297,8 @@ struct Sample
 			{
 				if (trimer_occupations[TrimerPos(x, y, 0).index(w)])
 					for (auto& rel : j4_neighbor_list_s0)
-						if (trimer_occupations[TrimerPos(x + rel.x, y + rel.y, 1).index(w)])
-							j4_pairs++;
+						if (trimer_occupations[TrimerPos(x + rel.x, y + rel.y, 1).canonical(w, h).index(w)])
+							j4_energy++;
 			}
 		}
 	}
@@ -308,13 +309,13 @@ struct Sample
 		if (pos.s == 0)
 		{
 			for (auto& rel : j4_neighbor_list_s0)
-				if (trimer_occupations[TrimerPos(pos.x + rel.x, pos.y + rel.y, 1).index(w)])
+				if (trimer_occupations[TrimerPos(pos.x + rel.x, pos.y + rel.y, 1).canonical(w, h).index(w)])
 					pairs++;
 		}
 		else
 		{
 			for (auto& rel : j4_neighbor_list_s1)
-				if (trimer_occupations[TrimerPos(pos.x + rel.x, pos.y + rel.y, 0).index(w)])
+				if (trimer_occupations[TrimerPos(pos.x + rel.x, pos.y + rel.y, 0).canonical(w, h).index(w)])
 					pairs++;
 		}
 		return pairs;
@@ -450,7 +451,7 @@ struct Sample
 		int dj4 = j4_neighbors_of(dest) - j4_neighbors_of(seed);
 		int dcluster = 0;
 
-		for (auto& [occ, rel] : seed.get_occupations_wrel())
+		for (auto& [occ, rel] : seed.get_occupations_wrel(w, h))
 		{
 			auto& popc = vertex_occupations[occ.index(w)].occupations;
 			ASSERT(popc & rel);
@@ -459,7 +460,7 @@ struct Sample
 			dcluster += 1 - 2 * popc;
 			popc &= ~rel;
 		}
-		for (auto& [occ, rel] : dest.get_occupations_wrel())
+		for (auto& [occ, rel] : dest.get_occupations_wrel(w, h))
 		{
 			auto& popc = vertex_occupations[occ.index(w)].occupations;
 
@@ -468,13 +469,13 @@ struct Sample
 			popc |= rel;
 		}
 
-		j4_pairs += dj4;
-		cluster_overlaps += dcluster;
+		j4_energy += dj4;
+		cluster_energy += dcluster;
 	}
 
 	template <typename Rng> void pocket_move(Rng& rng)
 	{
-		ASSERT(cluster_overlaps == 0)
+		ASSERT(cluster_energy <= w * h)
 
 		TrimerPos seed(0, 0, 2);
 		while (seed.s == 2)
@@ -635,12 +636,30 @@ void sim()
 	}
 }
 
-void test_cluster()
+void test_energy()
 {
-	std::cout << Cluster::relative(-1, -1, 1).find_first_occupation({0, 0}, 6, 6) << std::endl;
-	std::cout << Cluster::relative(-1, 0, 1).find_first_occupation({0, 0}, 6, 6) << std::endl;
-	std::cout << Cluster::relative(0, -1, 1).find_first_occupation({0, 0}, 6, 6) << std::endl;
-	std::cout << Cluster::relative(0, 0, 0).find_first_occupation({0, 0}, 6, 6) << std::endl;
+	std::vector<TrimerPos> pos;
+	for (int i = 0; i < 6; i += 3)
+		for (int j = 0; j < 6; j += 3)
+		{
+			pos.emplace_back(i, j, 0);
+			pos.emplace_back(i + 1, j + 1, 0);
+			pos.emplace_back(i + 2, j + 2, 0);
+		}
+
+	auto sample = Sample(6, 6, pos);
+	TEST_ASSERT(sample.cluster_energy == 2 * 2 * 3 * 3)
+	TEST_ASSERT(sample.j4_energy == 0)
+
+	for (int i = 0; i < 6; i += 3)
+		for (int j = 0; j < 6; j += 3)
+		{
+			pos.emplace_back(i + 1, j, 0);
+		}
+
+	sample = Sample(6, 6, pos);
+	TEST_ASSERT(sample.cluster_energy == 2 * 2 * 3 * 2 + 2 * 2 * 3 * 4)
+	TEST_ASSERT(sample.j4_energy == 0)
 }
 
 void test_pocket()
@@ -679,16 +698,17 @@ void test_pocket()
 
 		if (total != test[it])
 		{
-			std::cout << "pocket test failed" << std::endl;
+			TEST_ASSERT(false);
 			return;
 		}
 	}
-	std::cout << "pocket test passed" << std::endl;
+
+	TEST_ASSERT(true);
 }
 
 void test()
 {
-	test_cluster();
+	test_energy();
 	test_pocket();
 }
 
