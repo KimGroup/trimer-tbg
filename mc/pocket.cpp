@@ -79,7 +79,6 @@ struct TrimerPos;
 struct Cluster
 {
 	uint8_t occupations = 0;
-	TrimerPos find_first_occupation(MonomerPos pos, int32_t w, int32_t h) const;
 	static Cluster relative(int dx, int dy, int s)
 	{
 		if (dx != 0)
@@ -89,6 +88,8 @@ struct Cluster
 
 		return Cluster{(uint8_t)(1 << (dx * 4 + dy * 2 + s))};
 	}
+
+	bool operator==(const Cluster& other) const { return occupations == other.occupations; }
 };
 
 struct TrimerPos
@@ -101,7 +102,7 @@ struct TrimerPos
 
 	MonomerPos mono_pos() const { return MonomerPos(x, y); }
 
-	std::array<MonomerPos, 3> get_occupations(int32_t w, int32_t h) const
+	std::array<MonomerPos, 3> get_clusters(int32_t w, int32_t h) const
 	{
 		std::array<MonomerPos, 3> r;
 		r[0] = {x + 1, y};
@@ -117,7 +118,7 @@ struct TrimerPos
 		return r;
 	}
 
-	std::array<std::pair<MonomerPos, Cluster>, 3> get_occupations_wrel(int32_t w, int32_t h) const
+	std::array<std::pair<MonomerPos, Cluster>, 3> get_clusters_wrel(int32_t w, int32_t h) const
 	{
 		std::array<std::pair<MonomerPos, Cluster>, 3> r;
 		if (s == 0)
@@ -187,18 +188,6 @@ struct TrimerPos
 
 	bool operator==(const TrimerPos& other) const { return x == other.x && y == other.y && s == other.s; }
 };
-
-TrimerPos Cluster::find_first_occupation(MonomerPos pos, int32_t w, int32_t h) const
-{
-	for (int dx = -1; dx <= 0; dx++)
-		for (int dy = -1; dy <= 0; dy++)
-			for (int s = 0; s < 2; s++)
-				if (occupations & relative(dx, dy, s).occupations)
-					return TrimerPos(pos.x + dx, pos.y + dy, s).canonical(w, h);
-
-	ASSERT(false);
-	return {0, 0, 2};
-}
 
 namespace std
 {
@@ -271,7 +260,7 @@ struct Sample
 			{
 				auto tri = TrimerPos::from_index(i, w);
 
-				for (auto& [occ, rel] : tri.get_occupations_wrel(w, h))
+				for (auto& [occ, rel] : tri.get_clusters_wrel(w, h))
 					vertex_occupations[occ.index(w)].occupations |= rel.occupations;
 			}
 		}
@@ -431,6 +420,9 @@ struct Sample
 		return ret;
 	}
 
+	/*
+	Updates J4 and cluster energy
+	*/
 	template <typename Rng> void metropolis_move(Rng& rng)
 	{
 		TrimerPos seed(0, 0, 2);
@@ -451,52 +443,62 @@ struct Sample
 		int dj4 = j4_neighbors_of(dest) - j4_neighbors_of(seed);
 		int dcluster = 0;
 
-		for (auto& [occ, rel] : seed.get_occupations_wrel(w, h))
+		for (auto& [occ, rel] : seed.get_clusters_wrel(w, h))
 		{
 			auto& popc = vertex_occupations[occ.index(w)].occupations;
-			ASSERT(popc & rel);
+			ASSERT((popc & rel) != 0);
 
 			// (x-1)^2 - x^2 = 1 - 2x
 			dcluster += 1 - 2 * popc;
-			popc &= ~rel;
+			popc &= ~rel.occupations;
 		}
-		for (auto& [occ, rel] : dest.get_occupations_wrel(w, h))
+		for (auto& [occ, rel] : dest.get_clusters_wrel(w, h))
 		{
 			auto& popc = vertex_occupations[occ.index(w)].occupations;
+			ASSERT((popc & rel) == 0);
 
 			// x^2 - (x-1)^2 = 2x - 1
 			dcluster += 2 * popc - 1;
-			popc |= rel;
+			popc |= rel.occupations;
 		}
 
 		j4_energy += dj4;
 		cluster_energy += dcluster;
 	}
 
-	template <typename Rng> void pocket_move(Rng& rng)
+	/*
+	Does not update J4 and cluster energy
+	*/
+	template <typename Rng> void pocket_move(Rng& rng, float cascade_chance = 1.f)
 	{
-		ASSERT(cluster_energy <= w * h)
+		MonomerPos symc;
+		int syma;
 
 		TrimerPos seed(0, 0, 2);
 		while (seed.s == 2)
 		{
 			uint32_t candidate = rng() % trimer_occupations.size();
+			symc = MonomerPos(rng() % w, rng() % h);
+			syma = rng() % 6;
+
 			if (trimer_occupations[candidate])
+			{
 				seed = TrimerPos::from_index(candidate, w);
+				if (trimer_occupations[seed.reflect(symc, syma, w, h).index(w)])
+					seed = TrimerPos(0, 0, 2);
+			}
 		}
 
+		std::uniform_real_distribution<> uniform(0.f, 1.f);
 		std::vector<TrimerPos> pocket{seed}, Abar;
-		std::vector<std::pair<MonomerPos, TrimerPos>> Abar_entries;
+		std::vector<std::pair<MonomerPos, Cluster>> Abar_entries;
 
 		trimer_occupations[seed.index(w)] = false;
-		for (auto& i : seed.get_occupations(w, h))
+		for (auto& [i, occ] : seed.get_clusters_wrel(w, h))
 		{
-			ASSERT(vertex_occupations[i.index(w)].occupations > 0)
-			vertex_occupations[i.index(w)].occupations = 0;
+			ASSERT((vertex_occupations[i.index(w)].occupations & occ.occupations) != 0)
+			vertex_occupations[i.index(w)].occupations &= ~occ.occupations;
 		}
-
-		auto symc = MonomerPos(rng() % w, rng() % h);
-		auto syma = rng() % 6;
 
 		while (pocket.size() > 0)
 		{
@@ -506,40 +508,65 @@ struct Sample
 			pocket.erase(std::find(pocket.begin(), pocket.end(), el));
 			Abar.push_back(moved);
 
-			for (auto& i : moved.get_occupations(w, h))
+			for (auto& [i, rel] : moved.get_clusters_wrel(w, h))
 			{
-				Abar_entries.push_back(std::make_pair(i, moved));
+				Abar_entries.push_back(std::make_pair(i, rel));
+				auto target_occ = vertex_occupations[i.index(w)].occupations;
 
-				if (vertex_occupations[i.index(w)].occupations > 0)
-				{
-					auto overlap = vertex_occupations[i.index(w)].find_first_occupation(i, w, h);
-					trimer_occupations[overlap.index(w)] = false;
+				if (target_occ > 0)
+					for (int dx = -1; dx <= 0; dx++)
+						for (int dy = -1; dy <= 0; dy++)
+							for (int s = 0; s < 2; s++)
+								if ((target_occ & Cluster::relative(dx, dy, s).occupations) != 0 &&
+									((cascade_chance == 1.f || uniform(rng) < cascade_chance)))
+								{
+									auto overlap = TrimerPos(i.x + dx, i.y + dy, s).canonical(w, h);
+									trimer_occupations[overlap.index(w)] = false;
 
-					pocket.push_back(overlap);
-					for (auto& j : overlap.get_occupations(w, h))
-					{
-						ASSERT(vertex_occupations[j.index(w)].occupations > 0)
-						vertex_occupations[j.index(w)].occupations = 0;
-					}
-				}
+									pocket.push_back(overlap);
+									for (auto& [j, rel2] : overlap.get_clusters_wrel(w, h))
+									{
+										ASSERT((vertex_occupations[j.index(w)].occupations & rel2.occupations) != 0)
+										vertex_occupations[j.index(w)].occupations &= ~rel2.occupations;
+									}
+								}
 			}
 		}
 
 		for (auto& i : Abar)
 			trimer_occupations[i.index(w)] = true;
 
-		for (auto& pair : Abar_entries)
+		for (auto& [vertex, occ] : Abar_entries)
 		{
-			ASSERT(vertex_occupations[pair.first.index(w)].occupations == 0)
-			vertex_occupations[pair.first.index(w)] =
-				Cluster::relative(pair.second.x - pair.first.x, pair.second.y - pair.first.y, pair.second.s);
+			ASSERT((vertex_occupations[vertex.index(w)].occupations & occ.occupations) == 0)
+			vertex_occupations[vertex.index(w)].occupations |= occ.occupations;
 		}
+
+#ifdef TEST
+		auto occupations = vertex_occupations;
+		regenerate_occupation();
+		ASSERT(occupations == vertex_occupations)
+#endif
 	}
 };
 const std::array<MonomerPos, 6> Sample::j4_neighbor_list_s0 = {MonomerPos{0, 1}, {1, 0},  {0, -2},
 															   {1, -2},			 {-2, 0}, {-2, 1}};
 const std::array<MonomerPos, 6> Sample::j4_neighbor_list_s1 = {MonomerPos{0, 2}, {-1, 2}, {2, 0},
 															   {2, -1},			 {0, -1}, {-1, 0}};
+
+struct PTEnsemble
+{
+	std::vector<std::pair<float, Sample>> chains;
+
+	template <typename Rng> void step(Rng& rng, int index)
+	{
+		if (chains[index].first == 0)
+			chains[index].second.pocket_move(rng);
+		else
+		{
+		}
+	}
+};
 
 void sim()
 {
@@ -662,6 +689,28 @@ void test_energy()
 	TEST_ASSERT(sample.j4_energy == 0)
 }
 
+void test_energy2()
+{
+	std::vector<TrimerPos> pos;
+	for (int i = 0; i < 6; i += 3)
+		for (int j = 0; j < 6; j += 3)
+		{
+			pos.emplace_back(i, j, 0);
+			pos.emplace_back(i + 1, j + 1, 0);
+			pos.emplace_back(i + 2, j + 2, 0);
+		}
+
+	auto sample = Sample(6, 6, pos);
+	auto energy0 = sample.cluster_energy;
+
+	std::minstd_rand rng;
+	rng.seed(1234);
+	for (int i = 0; i < 1000; i++)
+	{
+		sample.pocket_move(rng, 0.0f);
+	}
+}
+
 void test_pocket()
 {
 	std::minstd_rand rng;
@@ -683,7 +732,7 @@ void test_pocket()
 
 	auto sample = Sample(6, 6, pos);
 
-	int test[8] = {348, 428, 399, 341, 393, 380, 359, 347};
+	int test[8] = {355, 382, 427, 381, 384, 360, 344, 355};
 	for (int it = 0; it < 8; it++)
 	{
 		for (int i = 0; i < 100; i++)
@@ -709,6 +758,7 @@ void test_pocket()
 void test()
 {
 	test_energy();
+	// test_energy2();
 	test_pocket();
 }
 

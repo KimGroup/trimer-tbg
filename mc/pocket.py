@@ -1,4 +1,5 @@
 import matplotlib
+import collections
 import scipy
 import matplotlib.pyplot as plt
 import cProfile
@@ -80,7 +81,7 @@ def draw_duallattice(ax, color=None, ls="-"):
 
 
 def show_tiling(ax, sample, color="blue", wf="hexa", zoom=1):
-    pos, occ = sample
+    pos, _ = sample
     patches = []
     for x, y, s in pos:
         if wf == "tri":
@@ -111,20 +112,6 @@ def show_tiling(ax, sample, color="blue", wf="hexa", zoom=1):
     ax.set_aspect("equal")
 
 
-def find_overlaps(sample, new_trimer):
-    search_list = \
-        [(-1, 1, 0), (-1, 1, 1), (0, 1, 0), (0, 0, 1), (1, 0, 0), (1, -1, 0), (1, -1, 1), (0, -1, 0), (0, -1, 1), (-1, -1, 1), (-1, 0, 0), (-1, 0, 1)] if new_trimer[2] == 0 else \
-        [(0, 1, 0), (0, 1, 1), (1, 1, 0), (1, 0, 0), (1, 0, 1), (1, -1, 0),
-         (1, -1, 1), (0, -1, 1), (0, 0, 0), (-1, 0, 1), (-1, 1, 0), (-1, 1, 1)]
-
-    trimers, positions = sample
-
-    for x, y, s in search_list:
-        pos = (new_trimer[0] + x, new_trimer[1] + y, s)
-        if pos in positions:
-            yield positions[pos]
-
-
 def occupations(pos):
     if pos[2] == 0:
         return [(pos[0], pos[1]), ((pos[0] + 1) % width, pos[1]), (pos[0], (pos[1] + 1) % height)]
@@ -133,10 +120,10 @@ def occupations(pos):
 
 
 def gen_occ(l):
-    d = {}
+    d = collections.defaultdict(list)
     for x in l:
         for o in occupations(x):
-            d[o] = x
+            d[o].append(x)
     return d
 
 
@@ -169,13 +156,6 @@ def apply_symmetry(sym, pos):
         case("R", (cx, cy, dir)):
             px, py, ps = recenter_tri(
                 (pos[0] - cx + width//2, pos[1] - cy + height//2, pos[2]))
-
-            # if (width % 2 == 1 and px == width-1) or \
-            #     (height % 2 == 1 and py == height-1):
-            #     if 0 <= dir < 3:
-            #         return (pos[0], pos[1], 1-dir)
-            #     else:
-            #         return (pos[0], pos[1], dir)
 
             px -= width//2
             py -= height//2
@@ -375,21 +355,6 @@ def enumerate_tilings():
                 dfs.append((prev_shape, new_row))
                 continue
 
-            # if dfs[1][1] == [-1, 0, 0, -1, 0, 0, -1, 1, 2, -1, 1, 2] and \
-            #     dfs[2][1] == [0, -1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0] and \
-            #     dfs[3][1] == [0, 0, -1, 0, 0, 1, 2, -1, 1, 2, 1, 2] and \
-            #     dfs[4][1] == [2, 0, 0, 1, 2, 0, 0, 0, 0, -1, 0, 1] and \
-            #     dfs[5][1] == [1, 2, -1, 0, -1, 1, 2, -1, 0, 0, -1, 0]:
-            #     print("try:")
-            #     print("\n".join([" ".join(str(x) if x>=0 else "-" for x in row) for shape, row in reversed(dfs)]))
-            #     if mask_above(dfs[-1][1]) == init_mask:
-            #         print("passed")
-            #         fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-            #         draw_hexalattice(ax)
-            #         show_tiling(ax, (rowspace_to_trimers([row for shape, row in dfs]), None))
-            #         plt.savefig("dfs.png")
-            #     input()
-            
             # match vertical PBC
             if mask_above(dfs[-1][1]) == init_mask:
                 yield [row for shape, row in dfs]
@@ -397,7 +362,7 @@ def enumerate_tilings():
             dfs[-1] = (dfs[-1][0], advance(dfs[-1][0], dfs[-1][1]))
 
 def find_monomers(sample):
-    positions, occs = sample
+    positions, _ = sample
     locs = set()
     for x in range(width):
         for y in range(height):
@@ -406,54 +371,94 @@ def find_monomers(sample):
         for pt in occupations(p):
             locs.discard((pt))
     return locs
-            
-def pocket_move(sample):
+
+def metropolis_move(sample):
     positions, occ = sample
     seed = random.choice(positions)
+    dest = None
+    while dest is None:
+        dest = (random.randint(0, width), random.randint(0, height), random.randint(0, 2))
+        if dest in positions:
+            dest = None
+    
+    newpositions = list(positions)
+    newpositions.remove(seed)
+    newpositions.append(dest)
+    newocc = collections.defaultdict(list, occ)
+    for vtx in occupations(seed):
+        del newocc[vtx]
+    for vtx in occupations(dest):
+        newocc[vtx] = dest
 
-    pocket = ([seed], {x: seed for x in occupations(seed)})
-    Abar = ([], {})
+    return (newpositions, newocc)
+
+def cluster_energy(sample):
+    positions, occ = sample
+    total = 0
+    for key, value in occ.items():
+        total += len(value) * len(value)
+
+    return total
+            
+def pocket_move(sample, cascade_probability=1, axes=None, seed=None, sym=None, debug=False):
+    positions, occ = sample
+    if seed is None:
+        seed = random.choice(positions)
+    if sym is None:
+        sym = rand_symmetry()
+
+    pocket = ([seed], collections.defaultdict(list, {x: [seed] for x in occupations(seed)}))
+    Abar = ([], collections.defaultdict(list))
     A = (positions.copy(), occ.copy())
 
     A[0].remove(seed)
     for pt in occupations(seed):
-        del A[1][pt]
-
-    sym = rand_symmetry()
+        A[1][pt].remove(seed)
+        if len(A[1][pt]) == 0:
+            del A[1][pt]
 
     while len(pocket[0]) > 0:
         el = random.choice(pocket[0])
         moved = apply_symmetry(sym, el)
 
-        # fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-        # draw_hexalattice(ax)
-        # show_tiling(ax, (A[0], None), "blue")
-        # show_tiling(ax, (Abar[0], None), "green")
-        # show_tiling(ax, (pocket[0], None), "red")
-        # plt.show()
-
         # final location fixed: move from pocket to complement
         pocket[0].remove(el)
         for pt in occupations(el):
-            del pocket[1][pt]
+            pocket[1][pt].remove(el)
+            if len(pocket[1][pt]) == 0:
+                del pocket[1][pt]
 
         Abar[0].append(moved)
         for pt in occupations(moved):
-            Abar[1][pt] = moved
+            Abar[1][pt].append(moved)
 
         for pt in occupations(moved):
-            if pt in A[1]:
-                overlap = A[1][pt]
+            if pt in A[1] and random.random() < cascade_probability:
+                for overlap in A[1][pt]:
+                    # move from A to pocket
+                    A[0].remove(overlap)
+                    pocket[0].append(overlap)
+                    for occ in occupations(overlap):
+                        A[1][occ].remove(overlap)
+                        if len(A[1][occ]) == 0:
+                            del A[1][occ]
 
-                # move from A to pocket
-                A[0].remove(overlap)
-                pocket[0].append(overlap)
-                for occ in occupations(overlap):
-                    del A[1][occ]
-                    pocket[1][occ] = overlap
+                        pocket[1][occ].append(overlap)
 
+    if axes is not None:
+        draw_hexalattice(axes[0])
+        show_tiling(axes[0], sample, "blue")
+        show_tiling(axes[0], ([seed], None), "red")
+        draw_hexalattice(axes[1])
+        show_tiling(axes[1], (A[0], None), "blue")
+        show_tiling(axes[1], (Abar[0], None), "lime")
+        show_tiling(axes[1], ([apply_symmetry(sym, seed)], None), "red")
 
-    return (A[0] + Abar[0], A[1] | Abar[1]), len(Abar[0])
+    new_a_occ = A[1].copy()
+    for key, value in Abar[1].items():
+        new_a_occ[key] += value
+
+    return (A[0] + Abar[0], new_a_occ), len(Abar[0])
 
 
 def rowspace_to_trimers(rows):
@@ -466,7 +471,53 @@ def rowspace_to_trimers(rows):
                 ret.append(((j-1)%len(row), i, 1))
     return ret
 
-def main2():
+def encode_trimer_list(trimers):
+    return ";".join(",".join(str(i) for i in a) for a in sorted(trimers))
+
+def monomer_monomer(pos):
+    pos = list(pos)
+    for i in range(len(pos)):
+        for j in range(i+1, len(pos)):
+            yield center_mono((0, 0), (pos[i][0]-pos[j][0], pos[i][1]-pos[j][1]))
+
+def trimer_trimer(sample):
+    pos, _ = sample
+    for _ in range(width * height // 10):
+        ij = np.random.randint(len(pos), size=2)
+        i, j = ij[0], ij[1]
+        if pos[j][2] == 1:
+            ni = apply_symmetry(("R", (0, 0, 2)), pos[i])
+            nj = apply_symmetry(("R", (0, 0, 2)), pos[j])
+            yield center_tri((0, 0), (ni[0]-nj[0], ni[1]-nj[1], ni[2]))
+        else:
+            yield center_tri((0, 0), (pos[i][0]-pos[j][0], pos[i][1]-pos[j][1], pos[i][2]))
+
+def monomer_dimer(pos):
+    pos = list(pos)
+    for i in range(len(pos)):
+        for j in range(i+1, len(pos)):
+            c = None
+            for dx, dy, r in [(1, 0, 0), (0, 1, 1), (-1, 1, 2)]:
+                if (pos[i][0] + dx) % width == pos[j][0] and (pos[i][1] + dy) % height == pos[j][1]:
+                    c = pos[i]
+                    rot = r
+                    break
+                if (pos[j][0] + dx) % width == pos[i][0] and (pos[j][1] + dy) % height == pos[i][1]:
+                    c = pos[j]
+                    rot = r
+                    break
+            
+            if c is not None:
+                for k in range(len(pos)):
+                    if k == i or k == j:
+                        continue
+                    yield center_mono((0, 0), rotate(center_mono(c, pos[k]), -rot))
+                    if pos[0] != (0, 0):
+                        pass
+                        # import pdb; pdb.set_trace()
+
+
+def show_enumerated():
     class Index:
         ind = 0
         def __init__(self, ax, tilings):
@@ -509,184 +560,3 @@ def main2():
     bprev.on_clicked(callback.prev)
 
     plt.show()
-
-
-def encode_trimer_list(trimers):
-    return ";".join(",".join(str(i) for i in a) for a in sorted(trimers))
-
-def main4():
-    with open("12x12-tilings.dat", "w") as f:
-        for x in enumerate_tilings():
-            tr = rowspace_to_trimers(x)
-            f.write(encode_trimer_list(tr) + "\n")
-
-def main4_5():
-    with open("12x12-tilings.dat", "r") as f:
-        occs = {x.strip(): 0 for x in f.readlines()}
-
-    print(len(occs))
-
-    pos = []
-    for i in [0, 3, 6, 9]:
-        for j in [0, 3, 6, 9]:
-            pos.append((i, j, 0))
-            pos.append((i+1, j+1, 0))
-            pos.append((i+2, j+2, 0))
-
-    sample = (pos, gen_occ(pos))
-    orig_sample = sample
-    
-    fitx = []
-    fity = []
-
-    # for i in range(8000000):
-    #     if i > 0 and i % 5000 == 0:
-    #         fitx.append(i)
-    #         fity.append(len(occs))
-    #         print(i, len(occs))
-
-    #     sample, _ = pocket_move(sample)
-
-    #     # fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-    #     # draw_hexalattice(ax)
-    #     # show_tiling(ax, sample)
-    #     # plt.show()
-
-    #     enc = encode_trimer_list(sample[0])
-    #     if enc not in occs:
-    #         fig, ax = plt.subplots(1, 1, figsize=[8, 8])
-    #         draw_hexalattice(ax)
-    #         show_tiling(ax, sample)
-    #         plt.savefig("asdf.png")
-    #         asdf
-    #         occs[enc] = 1
-    #     else:
-    #         occs[enc] += 1
-    
-    # np.save("fitx", fitx)
-    # np.save("fity", fity)
-    fitx = np.load("fitx.npy")
-    fity = np.load("fity.npy")
-
-    plt.plot(fitx, fity, "o")
-    # def f(x, n):
-    #     return n*(1-np.exp(-x/n))
-    # def f(x, n):
-    #     return n*(1-np.power((n-1)/n, x))
-
-    # a, c = scipy.optimize.curve_fit(f, fitx, fity)
-    # plt.plot(np.linspace(0, 5e6), f(np.linspace(0, 5e6), a[0]), label=f"best fit: {round(a[0])}+-{round(np.sqrt(c[0,0]))}")
-
-    plt.xlabel("# MC samples")
-    plt.ylabel("# unique states visited")
-    plt.axhline(2758128, label="true # states from exact enum=2467326")
-
-    plt.legend()
-    plt.savefig("fig.png")
-
-def monomer_monomer(pos):
-    pos = list(pos)
-    for i in range(len(pos)):
-        for j in range(i+1, len(pos)):
-            yield center_mono((0, 0), (pos[i][0]-pos[j][0], pos[i][1]-pos[j][1]))
-
-def trimer_trimer(sample):
-    pos, occ = sample
-    for _ in range(width * height // 10):
-        ij = np.random.randint(len(pos), size=2)
-        i, j = ij[0], ij[1]
-        if pos[j][2] == 1:
-            ni = apply_symmetry(("R", (0, 0, 2)), pos[i])
-            nj = apply_symmetry(("R", (0, 0, 2)), pos[j])
-            yield center_tri((0, 0), (ni[0]-nj[0], ni[1]-nj[1], ni[2]))
-        else:
-            yield center_tri((0, 0), (pos[i][0]-pos[j][0], pos[i][1]-pos[j][1], pos[i][2]))
-
-def monomer_dimer(pos):
-    pos = list(pos)
-    for i in range(len(pos)):
-        for j in range(i+1, len(pos)):
-            c = None
-            for dx, dy, r in [(1, 0, 0), (0, 1, 1), (-1, 1, 2)]:
-                if (pos[i][0] + dx) % width == pos[j][0] and (pos[i][1] + dy) % height == pos[j][1]:
-                    c = pos[i]
-                    rot = r
-                    break
-                if (pos[j][0] + dx) % width == pos[i][0] and (pos[j][1] + dy) % height == pos[i][1]:
-                    c = pos[j]
-                    rot = r
-                    break
-            
-            if c is not None:
-                for k in range(len(pos)):
-                    if k == i or k == j:
-                        continue
-                    yield center_mono((0, 0), rotate(center_mono(c, pos[k]), -rot))
-                    if pos[0] != (0, 0):
-                        pass
-                        # import pdb; pdb.set_trace()
-
-
-def main5():
-    global width, height
-    # for x in np.arange(6, 18, 6):
-    for x in [108]:
-        width = x
-        height = x
-
-        pos = []
-        for i in range(0, height, 3):
-            for j in range(0, width, 3):
-                pos.append((i, j, 0))
-                pos.append((i+1, j+1, 0))
-                pos.append((i+2, j+2, 0))
-        pos.remove((0, 0, 0))
-
-        sample = (pos, gen_occ(pos))
-
-        mono_di = {}
-        tri_tri = {}
-        mono_mono = {}
-
-        for i in range(10):
-            sample, _ = pocket_move(sample)
-
-        for i in range(500000):
-            if i % 1000 == 0:
-                print(i)
-
-            sample, _ = pocket_move(sample)
-            print(i)
-
-            # pos = find_monomers(sample)
-
-            if i % 5 == 0:
-                # for dist in monomer_monomer(pos):
-                #     if dist in mono_mono:
-                #         mono_mono[dist] += 1
-                #     else:
-                #         mono_mono[dist] = 1
-
-                # for dist in monomer_dimer(pos):
-                #     if dist in mono_di:
-                #         mono_di[dist] += 1
-                #     else:
-                #         mono_di[dist] = 1
-
-                for dist in trimer_trimer(sample):
-                    if dist in tri_tri:
-                        tri_tri[dist] += 1
-                    else:
-                        tri_tri[dist] = 1
-
-        print(tri_tri)
-        # np.save(f"data/{x}x{x}-3-500000.3-mono-mono", mono_mono)
-        np.save(f"data/{x}x{x}-3-500000.5-tri-tri-2", tri_tri)
-        # np.save(f"data/{x}x{x}-3-100000-mono-di", mono_di)
-
-# main()
-# main2()
-# main3()
-# main4()
-# main4_5()
-# main5()
