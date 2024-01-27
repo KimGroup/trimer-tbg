@@ -1,5 +1,6 @@
 #include <chrono>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <random>
 #include <sstream>
@@ -32,6 +33,8 @@ void assert_fail() { exit(0); }
 #endif
 
 int32_t pmod(int32_t a, int32_t b) { return (a % b + b) % b; }
+
+const double infinity = std::numeric_limits<double>::infinity();
 
 struct MonomerPos
 {
@@ -220,21 +223,23 @@ std::ostream& operator<<(std::ostream& o, const TrimerPos& v)
 
 struct Sample
 {
-	static const std::array<MonomerPos, 6> j4_neighbor_list_s0;
-	static const std::array<MonomerPos, 6> j4_neighbor_list_s1;
+	struct PairInteraction
+	{
+		int j4 = 0;
+		int u = 0;
+	};
+
+	static const std::array<std::array<MonomerPos, 6>, 2> j4_neighbor_list;
 
 	int32_t w, h;
+
+	int j4_total, clusters_total;
 
 	std::vector<bool> trimer_occupations;
 	std::vector<Cluster> vertex_occupations;
 
-	int cluster_energy;
-	int j4_energy;
-
 	Sample(int32_t w, int32_t h) : w(w), h(h)
 	{
-		cluster_energy = 0;
-		j4_energy = 0;
 		trimer_occupations = std::vector<bool>(w * h * 2, false);
 		vertex_occupations = std::vector<Cluster>(w * h);
 	}
@@ -246,8 +251,7 @@ struct Sample
 			trimer_occupations[i.index(w)] = true;
 
 		regenerate_occupation();
-		recalculate_clusters();
-		recalculate_j4();
+		calculate_energy();
 	}
 
 	void regenerate_occupation()
@@ -266,28 +270,25 @@ struct Sample
 		}
 	}
 
-	void recalculate_clusters()
+	void calculate_energy()
 	{
-		cluster_energy = 0;
+		clusters_total = 0;
+		j4_total = 0;
+
 		for (const auto& occ : vertex_occupations)
 		{
 			auto popc = __builtin_popcount(occ.occupations);
-			cluster_energy += popc * popc;
+			clusters_total += popc * popc - popc;
 		}
-	}
-
-	void recalculate_j4()
-	{
-		j4_energy = 0;
 
 		for (int x = 0; x < w; x++)
 		{
 			for (int y = 0; y < h; y++)
 			{
 				if (trimer_occupations[TrimerPos(x, y, 0).index(w)])
-					for (auto& rel : j4_neighbor_list_s0)
+					for (auto& rel : j4_neighbor_list[0])
 						if (trimer_occupations[TrimerPos(x + rel.x, y + rel.y, 1).canonical(w, h).index(w)])
-							j4_energy++;
+							j4_total++;
 			}
 		}
 	}
@@ -295,18 +296,10 @@ struct Sample
 	int j4_neighbors_of(const TrimerPos& pos)
 	{
 		int pairs = 0;
-		if (pos.s == 0)
-		{
-			for (auto& rel : j4_neighbor_list_s0)
-				if (trimer_occupations[TrimerPos(pos.x + rel.x, pos.y + rel.y, 1).canonical(w, h).index(w)])
-					pairs++;
-		}
-		else
-		{
-			for (auto& rel : j4_neighbor_list_s1)
-				if (trimer_occupations[TrimerPos(pos.x + rel.x, pos.y + rel.y, 0).canonical(w, h).index(w)])
-					pairs++;
-		}
+		for (auto& rel : j4_neighbor_list[pos.s])
+			if (trimer_occupations[TrimerPos(pos.x + rel.x, pos.y + rel.y, 1 - pos.s).canonical(w, h).index(w)])
+				pairs++;
+
 		return pairs;
 	}
 
@@ -420,56 +413,7 @@ struct Sample
 		return ret;
 	}
 
-	/*
-	Updates J4 and cluster energy
-	*/
-	template <typename Rng> void metropolis_move(Rng& rng)
-	{
-		TrimerPos seed(0, 0, 2);
-		while (seed.s == 2)
-		{
-			uint32_t candidate = rng() % trimer_occupations.size();
-			if (trimer_occupations[candidate])
-				seed = TrimerPos::from_index(candidate, w);
-		}
-		TrimerPos dest(0, 0, 2);
-		while (dest.s == 2)
-		{
-			uint32_t candidate = rng() % trimer_occupations.size();
-			if (!trimer_occupations[candidate])
-				dest = TrimerPos::from_index(candidate, w);
-		}
-
-		int dj4 = j4_neighbors_of(dest) - j4_neighbors_of(seed);
-		int dcluster = 0;
-
-		for (auto& [occ, rel] : seed.get_clusters_wrel(w, h))
-		{
-			auto& popc = vertex_occupations[occ.index(w)].occupations;
-			ASSERT((popc & rel) != 0);
-
-			// (x-1)^2 - x^2 = 1 - 2x
-			dcluster += 1 - 2 * popc;
-			popc &= ~rel.occupations;
-		}
-		for (auto& [occ, rel] : dest.get_clusters_wrel(w, h))
-		{
-			auto& popc = vertex_occupations[occ.index(w)].occupations;
-			ASSERT((popc & rel) == 0);
-
-			// x^2 - (x-1)^2 = 2x - 1
-			dcluster += 2 * popc - 1;
-			popc |= rel.occupations;
-		}
-
-		j4_energy += dj4;
-		cluster_energy += dcluster;
-	}
-
-	/*
-	Does not update J4 and cluster energy
-	*/
-	template <typename Rng> void pocket_move(Rng& rng, float cascade_chance = 1.f)
+	template <typename Rng> void pocket_move(Rng& rng, double u, double j4)
 	{
 		MonomerPos symc;
 		int syma;
@@ -489,7 +433,7 @@ struct Sample
 			}
 		}
 
-		std::uniform_real_distribution<> uniform(0.f, 1.f);
+		std::uniform_real_distribution<> uniform(0., 1.);
 		std::vector<TrimerPos> pocket{seed}, Abar;
 		std::vector<std::pair<MonomerPos, Cluster>> Abar_entries;
 
@@ -502,34 +446,63 @@ struct Sample
 
 		while (pocket.size() > 0)
 		{
-			auto el = pocket[rng() % pocket.size()];
-			auto moved = el.reflect(symc, syma, w, h);
+			auto el = pocket.back();
+			pocket.pop_back();
 
-			pocket.erase(std::find(pocket.begin(), pocket.end(), el));
+			auto moved = el.reflect(symc, syma, w, h);
 			Abar.push_back(moved);
 
+			std::unordered_map<TrimerPos, PairInteraction> candidates;
+
+			// add target overlaps to candidates
 			for (auto& [i, rel] : moved.get_clusters_wrel(w, h))
 			{
-				Abar_entries.push_back(std::make_pair(i, rel));
+				Abar_entries.emplace_back(i, rel);
 				auto target_occ = vertex_occupations[i.index(w)].occupations;
 
-				if (target_occ > 0)
+				if (target_occ > 0 && u != 0 && u > -infinity)
 					for (int dx = -1; dx <= 0; dx++)
 						for (int dy = -1; dy <= 0; dy++)
 							for (int s = 0; s < 2; s++)
-								if ((target_occ & Cluster::relative(dx, dy, s).occupations) != 0 &&
-									((cascade_chance == 1.f || uniform(rng) < cascade_chance)))
+								if ((target_occ & Cluster::relative(dx, dy, s).occupations) != 0)
 								{
 									auto overlap = TrimerPos(i.x + dx, i.y + dy, s).canonical(w, h);
-									trimer_occupations[overlap.index(w)] = false;
-
-									pocket.push_back(overlap);
-									for (auto& [j, rel2] : overlap.get_clusters_wrel(w, h))
-									{
-										ASSERT((vertex_occupations[j.index(w)].occupations & rel2.occupations) != 0)
-										vertex_occupations[j.index(w)].occupations &= ~rel2.occupations;
-									}
+									candidates[overlap].u++;
 								}
+			}
+
+			// add source overlaps to candidates
+			if (u != 0 && u < infinity)
+				for (auto& [i, rel] : el.get_clusters_wrel(w, h))
+				{
+					auto orig_occ = vertex_occupations[i.index(w)].occupations;
+
+					if (orig_occ > 0)
+						for (int dx = -1; dx <= 0; dx++)
+							for (int dy = -1; dy <= 0; dy++)
+								for (int s = 0; s < 2; s++)
+									if ((orig_occ & Cluster::relative(dx, dy, s).occupations) != 0)
+									{
+										auto overlap = TrimerPos(i.x + dx, i.y + dy, s).canonical(w, h);
+										candidates[overlap].u--;
+									}
+				}
+
+			if (j4 != 0)
+			{
+				for (auto& d : j4_neighbor_list[el.s])
+				{
+					auto pos = TrimerPos(el.x + d.x, el.y + d.y, 1 - el.s).canonical(w, h);
+					if (trimer_occupations[pos.index(w)])
+						candidates[pos].j4--;
+				}
+
+				for (auto& d : j4_neighbor_list[moved.s])
+				{
+					auto pos = TrimerPos(moved.x + d.x, moved.y + d.y, 1 - moved.s).canonical(w, h);
+					if (trimer_occupations[pos.index(w)])
+						candidates[pos].j4++;
+				}
 			}
 		}
 
@@ -547,28 +520,52 @@ struct Sample
 		regenerate_occupation();
 		ASSERT(occupations == vertex_occupations)
 #endif
+
+		calculate_energy();
 	}
 };
-const std::array<MonomerPos, 6> Sample::j4_neighbor_list_s0 = {MonomerPos{0, 1}, {1, 0},  {0, -2},
-															   {1, -2},			 {-2, 0}, {-2, 1}};
-const std::array<MonomerPos, 6> Sample::j4_neighbor_list_s1 = {MonomerPos{0, 2}, {-1, 2}, {2, 0},
-															   {2, -1},			 {0, -1}, {-1, 0}};
+
+const std::array<std::array<MonomerPos, 6>, 2> Sample::j4_neighbor_list = {
+	std::array<MonomerPos, 6>{MonomerPos{0, 1}, {1, 0}, {0, -2}, {1, -2}, {-2, 0}, {-2, 1}},
+	{MonomerPos{0, 2}, {-1, 2}, {2, 0}, {2, -1}, {0, -1}, {-1, 0}}};
 
 struct PTEnsemble
 {
-	std::vector<std::pair<float, Sample>> chains;
-
-	template <typename Rng> void step(Rng& rng, int index)
+	struct Chain
 	{
-		if (chains[index].first == 0)
-			chains[index].second.pocket_move(rng);
-		else
+		double temp;
+		Sample sample;
+	};
+
+	std::vector<Chain> chains;
+	int parity;
+
+	double j4;
+	double u;
+
+	template <typename Rng> void step_all(Rng& rng)
+	{
+		std::uniform_real_distribution<> uniform(0., 1.);
+
+		for (size_t i = 0; i < chains.size(); i++)
 		{
+			chains[i].sample.pocket_move(rng, u / chains[i].temp, j4 / chains[i].temp);
+		}
+
+		for (size_t i = parity++ % 2; i < chains.size() - 1; i += 2)
+		{
+			double e0 = chains[i].sample.clusters_total * u + chains[i].sample.j4_total * j4;
+			double e1 = chains[i + 1].sample.clusters_total * u + chains[i + 1].sample.j4_total * j4;
+
+			double action = (1 / chains[i + 1].temp - 1 / chains[i].temp) * (e0 - e1);
+
+			if (uniform(rng) < std::exp(-action))
+				std::swap(chains[i].sample, chains[i + 1].sample);
 		}
 	}
 };
 
-void sim()
+void sim_0k()
 {
 	std::minstd_rand rng;
 	rng.seed(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
@@ -576,7 +573,6 @@ void sim()
 
 	int sis[5] = {6, 12, 24, 48, 96};
 
-	// for (int s = 12; s < 108; s += 12)
 	for (int si = 0; si < 5; si++)
 	{
 		int s = sis[si];
@@ -617,7 +613,7 @@ void sim()
 		auto sample = Sample(s, s, pos);
 		for (int i = 0; i < N; i++)
 		{
-			sample.pocket_move(rng);
+			sample.pocket_move(rng, infinity, 0);
 
 			if (i % 1000 == 0)
 			{
@@ -663,6 +659,70 @@ void sim()
 	}
 }
 
+void sim_T()
+{
+	std::minstd_rand rng;
+	rng.seed(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+				 .count());
+
+	int sis[5] = {6, 12, 24, 48, 96};
+
+	for (int si = 0; si < 5; si++)
+	{
+		int s = sis[si];
+		std::vector<TrimerPos> pos;
+		for (int i = 0; i < s; i += 3)
+		{
+			for (int j = 0; j < s; j += 3)
+			{
+				if (i > 0 || j > 0)
+				{
+					pos.emplace_back(i, j, 0);
+				}
+				pos.emplace_back(i + 1, j + 1, 0);
+				pos.emplace_back(i + 2, j + 2, 0);
+			}
+		}
+
+		auto sample = Sample(s, s, pos);
+
+		int N = 10000;
+		int stride = 1;
+
+		double u = infinity;
+		double j4 = 1;
+
+		std::stringstream ss;
+		ss << "data/FT/" << s << "x" << s << "/r-3_u" << std::setw(3) << u << "_4j" << std::setw(3) << j4 << "_" << N
+		   << "." << stride << "-";
+
+		std::ofstream of0(ss.str() + "positions.dat");
+
+		for (int i = 0; i < N; i++)
+		{
+			sample.pocket_move(rng, u, j4);
+
+			if (i % 1000 == 0)
+			{
+				std::cout << s << " " << i << std::endl;
+			}
+
+			if ((i + 1) % stride != 0)
+				continue;
+
+			// trimer positions
+			for (size_t j = 0; j < sample.trimer_occupations.size(); j++)
+			{
+				if (sample.trimer_occupations[j])
+				{
+					of0 << TrimerPos::from_index(j, sample.w) << " ";
+				}
+			}
+			of0 << std::endl;
+		}
+	}
+}
+
 void test_energy()
 {
 	std::vector<TrimerPos> pos;
@@ -675,8 +735,8 @@ void test_energy()
 		}
 
 	auto sample = Sample(6, 6, pos);
-	TEST_ASSERT(sample.cluster_energy == 2 * 2 * 3 * 3)
-	TEST_ASSERT(sample.j4_energy == 0)
+	TEST_ASSERT(sample.cluster_energy == 0)
+	TEST_ASSERT(sample.j4_pairs == 0)
 
 	for (int i = 0; i < 6; i += 3)
 		for (int j = 0; j < 6; j += 3)
@@ -685,11 +745,11 @@ void test_energy()
 		}
 
 	sample = Sample(6, 6, pos);
-	TEST_ASSERT(sample.cluster_energy == 2 * 2 * 3 * 2 + 2 * 2 * 3 * 4)
-	TEST_ASSERT(sample.j4_energy == 0)
+	TEST_ASSERT(sample.cluster_energy == 24)
+	TEST_ASSERT(sample.j4_pairs == 0)
 }
 
-void test_energy2()
+void test_metro()
 {
 	std::vector<TrimerPos> pos;
 	for (int i = 0; i < 6; i += 3)
@@ -700,14 +760,16 @@ void test_energy2()
 			pos.emplace_back(i + 2, j + 2, 0);
 		}
 
-	auto sample = Sample(6, 6, pos);
-	auto energy0 = sample.cluster_energy;
+	PTEnsemble ensemble;
+	ensemble.j4 = 1;
+	ensemble.chains.emplace_back(PTEnsemble::Chain{1, Sample(6, 6, pos)});
 
 	std::minstd_rand rng;
 	rng.seed(1234);
+
 	for (int i = 0; i < 1000; i++)
 	{
-		sample.pocket_move(rng, 0.0f);
+		ensemble.step_all(rng);
 	}
 }
 
@@ -736,7 +798,7 @@ void test_pocket()
 	for (int it = 0; it < 8; it++)
 	{
 		for (int i = 0; i < 100; i++)
-			sample.pocket_move(rng);
+			sample.pocket_move(rng, 0, infinity);
 
 		int total = 0;
 		for (size_t i = 0; i < sample.trimer_occupations.size(); i++)
@@ -758,8 +820,8 @@ void test_pocket()
 void test()
 {
 	test_energy();
-	// test_energy2();
 	test_pocket();
+	test_metro();
 }
 
 int main()
@@ -767,6 +829,6 @@ int main()
 #ifdef TEST
 	test();
 #else
-	sim();
+	sim_T();
 #endif
 }

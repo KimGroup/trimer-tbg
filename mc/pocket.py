@@ -118,7 +118,6 @@ def occupations(pos):
     else:
         return [((pos[0] + 1) % width, (pos[1] + 1) % height), ((pos[0] + 1) % width, pos[1]), (pos[0], (pos[1] + 1) % height)]
 
-
 def gen_occ(l):
     d = collections.defaultdict(list)
     for x in l:
@@ -137,6 +136,15 @@ def rand_symmetry():
 
 def recenter_tri(pos):
     return (pos[0] % width, pos[1] % height, pos[2])
+
+
+def j4_neighbors(pos):
+    if pos[2] == 0:
+        l = [(0, 1), (1, 0), (0, -2), (1, -2), (-2, 0), (-2, 1)]
+    else:
+        l = [(0, 2), (-1, 2), (2, 0), (2, -1), (0, -1), (-1, 0)]
+
+    return [recenter_tri((pos[0]+x, pos[1]+y, 1-pos[2])) for x, y in l]
 
 def center_tri(c, pos):
     r = recenter_mono((pos[0]-c[0]+width//2, pos[1]-c[1]+height//2))
@@ -399,8 +407,19 @@ def cluster_energy(sample):
         total += len(value) * len(value)
 
     return total
+
+def j4_energy(sample):
+    positions, occ = sample
+    total = 0
+    for pos in positions:
+        if pos[2] == 0:
+            for neighbor in j4_neighbors(pos):
+                if neighbor in positions:
+                    total += 1
+
+    return total
             
-def pocket_move(sample, cascade_probability=1, axes=None, seed=None, sym=None, debug=False):
+def pocket_move(sample, cascade_probability=1, axes=None, seed=None, sym=None, debug=False, j4_parameter=0):
     positions, occ = sample
     if seed is None:
         seed = random.choice(positions)
@@ -444,6 +463,29 @@ def pocket_move(sample, cascade_probability=1, axes=None, seed=None, sym=None, d
                             del A[1][occ]
 
                         pocket[1][occ].append(overlap)
+
+        if j4_parameter != 0:
+            ediffs = collections.defaultdict(lambda: 0)
+
+            for neigh in j4_neighbors(el):
+                if neigh in A[0]:
+                    ediffs[neigh] -= 1
+            for neigh in j4_neighbors(moved):
+                if neigh in A[0]:
+                    ediffs[neigh] += 1
+            
+            for key, value in ediffs.items():
+                if random.random() < 1 - np.exp(-value * j4_parameter):
+                    # move from A to pocket
+                    A[0].remove(key)
+                    pocket[0].append(key)
+                    for occ in occupations(key):
+                        A[1][occ].remove(key)
+                        if len(A[1][occ]) == 0:
+                            del A[1][occ]
+
+                        pocket[1][occ].append(key)
+
 
     if axes is not None:
         draw_hexalattice(axes[0])
