@@ -238,6 +238,10 @@ struct Sample
 	std::vector<bool> trimer_occupations;
 	std::vector<Cluster> vertex_occupations;
 
+	std::vector<TrimerPos> _pocket, _Abar;
+	std::vector<std::pair<MonomerPos, Cluster>> _Abar_entries;
+	std::unordered_map<TrimerPos, PairInteraction> _candidates;
+
 	Sample(int32_t w, int32_t h) : w(w), h(h)
 	{
 		trimer_occupations = std::vector<bool>(w * h * 2, false);
@@ -434,8 +438,12 @@ struct Sample
 		}
 
 		std::uniform_real_distribution<> uniform(0., 1.);
-		std::vector<TrimerPos> pocket{seed}, Abar;
-		std::vector<std::pair<MonomerPos, Cluster>> Abar_entries;
+
+		_Abar.clear();
+		_Abar_entries.clear();
+		_pocket.clear();
+
+		_pocket.push_back(seed);
 
 		trimer_occupations[seed.index(w)] = false;
 		for (auto& [i, occ] : seed.get_clusters_wrel(w, h))
@@ -444,20 +452,20 @@ struct Sample
 			vertex_occupations[i.index(w)].occupations &= ~occ.occupations;
 		}
 
-		while (pocket.size() > 0)
+		while (_pocket.size() > 0)
 		{
-			auto el = pocket.back();
-			pocket.pop_back();
+			auto el = _pocket.back();
+			_pocket.pop_back();
 
 			auto moved = el.reflect(symc, syma, w, h);
-			Abar.push_back(moved);
+			_Abar.push_back(moved);
 
-			std::unordered_map<TrimerPos, PairInteraction> candidates;
+			_candidates.clear();
 
 			// add target overlaps to candidates
-			for (auto& [i, rel] : moved.get_clusters_wrel(w, h))
+			for (const auto& [i, rel] : moved.get_clusters_wrel(w, h))
 			{
-				Abar_entries.emplace_back(i, rel);
+				_Abar_entries.push_back(std::make_pair(i, rel));
 				auto target_occ = vertex_occupations[i.index(w)].occupations;
 
 				if (target_occ > 0 && u != 0 && u > -infinity)
@@ -467,7 +475,7 @@ struct Sample
 								if ((target_occ & Cluster::relative(dx, dy, s).occupations) != 0)
 								{
 									auto overlap = TrimerPos(i.x + dx, i.y + dy, s).canonical(w, h);
-									candidates[overlap].u++;
+									_candidates[overlap].u++;
 								}
 			}
 
@@ -484,7 +492,7 @@ struct Sample
 									if ((orig_occ & Cluster::relative(dx, dy, s).occupations) != 0)
 									{
 										auto overlap = TrimerPos(i.x + dx, i.y + dy, s).canonical(w, h);
-										candidates[overlap].u--;
+										_candidates[overlap].u--;
 									}
 				}
 
@@ -494,22 +502,39 @@ struct Sample
 				{
 					auto pos = TrimerPos(el.x + d.x, el.y + d.y, 1 - el.s).canonical(w, h);
 					if (trimer_occupations[pos.index(w)])
-						candidates[pos].j4--;
+						_candidates[pos].j4--;
 				}
 
 				for (auto& d : j4_neighbor_list[moved.s])
 				{
 					auto pos = TrimerPos(moved.x + d.x, moved.y + d.y, 1 - moved.s).canonical(w, h);
 					if (trimer_occupations[pos.index(w)])
-						candidates[pos].j4++;
+						_candidates[pos].j4++;
+				}
+			}
+
+			for (auto& [pos, interactions] : _candidates)
+			{
+				double u_factor = interactions.u > 0 ? u * interactions.u : 0;
+				double j4_factor = interactions.j4 > 0 ? j4 * interactions.j4 : 0;
+
+				if (u_factor + j4_factor == infinity || uniform(rng) < 1 - std::exp(-(u_factor + j4_factor)))
+				{
+					_pocket.push_back(pos);
+					trimer_occupations[pos.index(w)] = false;
+					for (auto& [cluster, rel] : pos.get_clusters_wrel(w, h))
+					{
+						ASSERT((vertex_occupations[cluster.index(w)].occupations & rel.occupations) != 0)
+						vertex_occupations[cluster.index(w)].occupations &= ~rel.occupations;
+					}
 				}
 			}
 		}
 
-		for (auto& i : Abar)
+		for (auto& i : _Abar)
 			trimer_occupations[i.index(w)] = true;
 
-		for (auto& [vertex, occ] : Abar_entries)
+		for (auto& [vertex, occ] : _Abar_entries)
 		{
 			ASSERT((vertex_occupations[vertex.index(w)].occupations & occ.occupations) == 0)
 			vertex_occupations[vertex.index(w)].occupations |= occ.occupations;
@@ -520,8 +545,6 @@ struct Sample
 		regenerate_occupation();
 		ASSERT(occupations == vertex_occupations)
 #endif
-
-		calculate_energy();
 	}
 };
 
@@ -690,11 +713,11 @@ void sim_T()
 		int stride = 1;
 
 		double u = infinity;
-		double j4 = 1;
+		double j4 = 0;
 
 		std::stringstream ss;
-		ss << "data/FT/" << s << "x" << s << "/r-3_u" << std::setw(3) << u << "_4j" << std::setw(3) << j4 << "_" << N
-		   << "." << stride << "-";
+		ss << "data/FT/" << s << "x" << s << "/r-3_u" << std::fixed << std::setprecision(2) << u << "_4j" << j4 << "_"
+		   << N << "." << stride << "-";
 
 		std::ofstream of0(ss.str() + "positions.dat");
 
