@@ -1,4 +1,5 @@
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -72,6 +73,7 @@ struct MonomerPos
 	uint32_t index(int w) const { return x + y * w; }
 	static MonomerPos from_index(uint32_t index, int w) { return MonomerPos(index % w, index / w); }
 
+	MonomerPos operator-() const { return MonomerPos(-x, -y); }
 	MonomerPos operator-(const MonomerPos& other) const { return MonomerPos(x - other.x, y - other.y); }
 	MonomerPos operator+(const MonomerPos& other) const { return MonomerPos(x + other.x, y + other.y); }
 	bool operator==(const MonomerPos& other) const { return x == other.x && y == other.y; }
@@ -221,6 +223,49 @@ std::ostream& operator<<(std::ostream& o, const TrimerPos& v)
 	return o << "(" << v.x << "," << v.y << "," << (int)v.s << ")";
 }
 
+template <typename T> struct Accumulator
+{
+	std::vector<T> mean;
+	std::vector<T> m2;
+
+	int interval;
+	int total = 0;
+
+	Accumulator(int n, int interval) : mean(n), m2(n), interval(interval) {}
+
+	void record(const std::vector<T>& vals)
+	{
+		total++;
+
+		for (size_t i = 0; i < vals.size(); i++)
+		{
+			double delta = vals[i] - mean[i];
+			mean[i] += delta / total;
+			double delta2 = vals[i] - mean[i];
+			m2[i] += delta * delta2;
+		}
+	}
+};
+
+template <typename T> std::ostream& operator<<(std::ostream& os, Accumulator<T>& a)
+{
+	if (a.total >= a.interval)
+	{
+		os << a.total << std::endl;
+		for (auto i : a.mean)
+			os << i << " ";
+		os << std::endl;
+		for (auto i : a.m2)
+			os << i << " ";
+		os << std::endl;
+
+		a.total = 0;
+		std::fill(a.mean.begin(), a.mean.end(), 0);
+		std::fill(a.m2.begin(), a.m2.end(), 0);
+	}
+	return os;
+}
+
 struct Sample
 {
 	struct PairInteraction
@@ -297,16 +342,6 @@ struct Sample
 		}
 	}
 
-	int j4_neighbors_of(const TrimerPos& pos)
-	{
-		int pairs = 0;
-		for (auto& rel : j4_neighbor_list[pos.s])
-			if (trimer_occupations[TrimerPos(pos.x + rel.x, pos.y + rel.y, 1 - pos.s).canonical(w, h).index(w)])
-				pairs++;
-
-		return pairs;
-	}
-
 	double trimer_correlation(TrimerPos d) const
 	{
 		int total = 0;
@@ -342,22 +377,18 @@ struct Sample
 	{
 		std::vector<MonomerPos> r;
 		for (int i = 0; i < w; i++)
-		{
 			for (int j = 0; j < h; j++)
 			{
 				if (vertex_occupations[MonomerPos(i, j).index(w)].occupations == 0)
-				{
 					r.emplace_back(i, j);
-				}
 			}
-		}
+
 		return r;
 	}
 
-	std::vector<MonomerPos> dimer_monomer_correlation() const
+	void record_dimer_monomer_correlations(Accumulator<double>& a) const
 	{
-		std::vector<MonomerPos> ret;
-
+		std::vector<double> vals(w * h);
 		std::vector<MonomerPos> monos = all_monomers();
 
 		std::vector<std::pair<MonomerPos, int>> dimers;
@@ -401,20 +432,92 @@ struct Sample
 			}
 
 			if (!found && !connected_monos.contains(monos[i]))
-			{
 				disjoint_monos.push_back(monos[i]);
-			}
 		}
 
 		for (auto& i : dimers)
-		{
 			for (auto& j : disjoint_monos)
+				vals[j.center_at(i.first, w, h).rotate(-i.second).canonical(w, h).index(w)]++;
+
+		a.record(vals);
+	}
+
+	void record_trimers(Accumulator<double>& a) const
+	{
+		std::vector<double> vals(w * h * 2);
+		for (size_t i = 0; i < trimer_occupations.size(); i++)
+		{
+			if (trimer_occupations[i])
+				vals[i]++;
+		}
+
+		a.record(vals);
+	}
+
+	void record_trimer_correlations(Accumulator<double>& a) const
+	{
+		std::vector<double> vals(w * h * 2);
+		for (size_t i = 0; i < trimer_occupations.size(); i++)
+		{
+			if (trimer_occupations[i])
+				for (size_t j = i + 1; j < trimer_occupations.size(); j++)
+					if (trimer_occupations[j])
+					{
+						auto p1 = TrimerPos::from_index(i, w);
+						auto p2 = TrimerPos::from_index(j, w);
+
+						auto d = p1.s == 0 ? TrimerPos(p2.x - p1.x, p2.y - p1.y, p2.s)
+										   : TrimerPos(p1.x - p2.x, p1.y - p2.y, 1 - p2.s);
+
+						vals[d.canonical(w, h).index(w)]++;
+					}
+		}
+
+		a.record(vals);
+	}
+
+	void record_monomers(Accumulator<double>& a) const
+	{
+		std::vector<double> vals(w * h);
+
+		for (uint i = 0; i < vertex_occupations.size(); i++)
+			if (vertex_occupations[i].occupations == 0)
+				vals[i]++;
+
+		a.record(vals);
+	}
+
+	void record_monomer_correlations(Accumulator<double>& a) const
+	{
+		std::vector<double> vals(w * h);
+		std::vector<MonomerPos> pos;
+
+		for (uint i = 0; i < vertex_occupations.size(); i++)
+			if (vertex_occupations[i].occupations == 0)
+				pos.push_back(MonomerPos::from_index(i, w));
+
+		for (uint i = 0; i < pos.size(); i++)
+		{
+			for (uint j = i + 1; j < pos.size(); j++)
 			{
-				ret.push_back(j.center_at(i.first, w, h).rotate(-i.second).canonical(w, h));
+				auto d = pos[i] - pos[j];
+				vals[d.canonical(w, h).index(w)]++;
+				vals[(-d).canonical(w, h).index(w)]++;
 			}
 		}
 
-		return ret;
+		a.record(vals);
+	}
+
+	void record_energy(Accumulator<double>& a)
+	{
+		std::vector<double> vals(2);
+		calculate_energy();
+
+		vals[0] = clusters_total;
+		vals[1] = j4_total;
+
+		a.record(vals);
 	}
 
 	template <typename Rng> void pocket_move(Rng& rng, double u, double j4)
@@ -515,8 +618,8 @@ struct Sample
 
 			for (auto& [pos, interactions] : _candidates)
 			{
-				double u_factor = interactions.u > 0 ? u * interactions.u : 0;
-				double j4_factor = interactions.j4 > 0 ? j4 * interactions.j4 : 0;
+				double u_factor = interactions.u != 0 ? u * interactions.u : 0;
+				double j4_factor = interactions.j4 != 0 ? j4 * interactions.j4 : 0;
 
 				if (u_factor + j4_factor == infinity || uniform(rng) < 1 - std::exp(-(u_factor + j4_factor)))
 				{
@@ -688,7 +791,7 @@ void sim_T()
 	rng.seed(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
 				 .count());
 
-	int sis[5] = {6, 12, 24, 48, 96};
+	int sis[5] = {6, 12, 24, 36, 48};
 
 	for (int si = 0; si < 5; si++)
 	{
@@ -709,17 +812,34 @@ void sim_T()
 
 		auto sample = Sample(s, s, pos);
 
-		int N = 10000;
-		int stride = 1;
+		int N = 10000000;
+		int stride = 5;
 
 		double u = infinity;
 		double j4 = 0;
 
-		std::stringstream ss;
-		ss << "data/FT/" << s << "x" << s << "/r-3_u" << std::fixed << std::setprecision(2) << u << "_4j" << j4 << "_"
-		   << N << "." << stride << "-";
+		std::filesystem::path basepath;
+		int runid = 0;
+		do
+		{
+			std::stringstream ss;
+			ss << "data/FT/" << s << "x" << s << "_r-3_u" << std::fixed << std::setprecision(2) << u << "_4j" << j4
+			   << "_" << N << "." << stride << "_" << runid++;
+			basepath = std::filesystem::path(ss.str());
+		} while (std::filesystem::exists(basepath));
+		std::filesystem::create_directories(basepath);
 
-		std::ofstream of0(ss.str() + "positions.dat");
+		std::ofstream ofmonomono(basepath / "mono-mono.dat");
+		std::ofstream ofmonodi(basepath / "mono-di.dat");
+		std::ofstream oftri(basepath / "tri.dat");
+		std::ofstream oftritri(basepath / "tri-tri.dat");
+		std::ofstream ofenergy(basepath / "energy.dat");
+
+		Accumulator<double> amonomono(s * s, 1000);
+		Accumulator<double> amonodi(s * s, 1000);
+		Accumulator<double> atri(s * s * 2, 1000);
+		Accumulator<double> atritri(s * s * 2, 1000);
+		Accumulator<double> aenergy(2, 1000);
 
 		for (int i = 0; i < N; i++)
 		{
@@ -733,15 +853,26 @@ void sim_T()
 			if ((i + 1) % stride != 0)
 				continue;
 
+			sample.record_monomer_correlations(amonomono);
+			sample.record_dimer_monomer_correlations(amonodi);
+			sample.record_trimers(atri);
+			sample.record_trimer_correlations(atritri);
+			sample.record_energy(aenergy);
+			ofmonomono << amonomono;
+			ofmonodi << amonodi;
+			oftri << atri;
+			oftritri << atritri;
+			ofenergy << aenergy;
+
 			// trimer positions
-			for (size_t j = 0; j < sample.trimer_occupations.size(); j++)
-			{
-				if (sample.trimer_occupations[j])
-				{
-					of0 << TrimerPos::from_index(j, sample.w) << " ";
-				}
-			}
-			of0 << std::endl;
+			// for (size_t j = 0; j < sample.trimer_occupations.size(); j++)
+			// {
+			// 	if (sample.trimer_occupations[j])
+			// 	{
+			// 		of0 << TrimerPos::from_index(j, sample.w) << " ";
+			// 	}
+			// }
+			// of0 << std::endl;
 		}
 	}
 }
