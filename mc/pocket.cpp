@@ -482,14 +482,21 @@ struct Sample
 	void record_partial_trimer_correlations(Accumulator<double>& a, Rng& rng, double probability) const
 	{
 		std::vector<double> vals(w * h * 2);
+		std::uniform_real_distribution<> uniform(0., 1.);
+
 		for (size_t i = 0; i < trimer_occupations.size(); i++)
 		{
-			if (trimer_occupations[i])
-				for (size_t j = i + 1; j < trimer_occupations.size(); j++)
+			if (trimer_occupations[i] && uniform(rng) <= probability)
+				for (size_t j = 0; j < trimer_occupations.size(); j++)
 					if (trimer_occupations[j])
 					{
+						if (j == i)
+							continue;
+
 						auto p1 = TrimerPos::from_index(i, w);
 						auto p2 = TrimerPos::from_index(j, w);
+						if (j > i)
+							std::swap(p1, p2);
 
 						auto d = p1.s == 0 ? TrimerPos(p2.x - p1.x, p2.y - p1.y, p2.s)
 										   : TrimerPos(p1.x - p2.x, p1.y - p2.y, 1 - p2.s);
@@ -530,6 +537,16 @@ struct Sample
 				vals[(-d).canonical(w, h).index(w)]++;
 			}
 		}
+
+		a.record(vals);
+	}
+
+	void record_cluster_count(Accumulator<double>& a) const
+	{
+		std::vector<double> vals(7);
+
+		for (uint i = 0; i < vertex_occupations.size(); i++)
+			vals[__builtin_popcount(vertex_occupations[i].occupations)]++;
 
 		a.record(vals);
 	}
@@ -679,7 +696,7 @@ struct Sample
 #endif
 	}
 
-	template <typename Rng> void reconfigure_brick_wall(Rng& rng, bool deconfine)
+	template <typename Rng> void reconfigure_brick_wall(Rng& rng, int vacancies = 0)
 	{
 		if (w != h || w % 6)
 			throw "";
@@ -689,10 +706,6 @@ struct Sample
 
 		int orientation = rng() % 3;
 		int phase = rng() % 3;
-
-		int vacancy_row = rng() % (h / 2);
-		int vacancy_dist = rng() % (2 * w / 3 - 1);
-		int vacancy_phaseshift = rng() % 2 + 1;
 
 		std::vector<int> phase_conf;
 		phase_conf.push_back(phase);
@@ -724,21 +737,13 @@ struct Sample
 				cur_row_start = TrimerPos(0, 1, 0);
 		}
 
+		int n = 0;
 		for (int row = 0; row < h / 2; row++)
 		{
 			uint offset = phase_conf[row] + row + 3 * (rng() % w);
 
 			for (int col = 0; col < 2 * w / 3; col++)
 			{
-				if (col == 0 && row == vacancy_row && deconfine)
-				{
-					offset += vacancy_phaseshift;
-					continue;
-				}
-
-				if (col >= vacancy_dist && row == vacancy_row && deconfine)
-					offset += (3 - vacancy_phaseshift);
-
 				TrimerPos cur_pos;
 				switch (orientation)
 				{
@@ -754,11 +759,14 @@ struct Sample
 					break;
 				}
 
-				trimer_occupations[cur_pos.canonical(w, h).index(w)] = true;
-				for (auto& [pos, rel] : cur_pos.get_clusters_wrel(w, h))
-					vertex_occupations[pos.index(w)].occupations |= rel.occupations;
-
 				offset += 3;
+
+				if (n++ >= vacancies)
+				{
+					trimer_occupations[cur_pos.canonical(w, h).index(w)] = true;
+					for (auto& [pos, rel] : cur_pos.get_clusters_wrel(w, h))
+						vertex_occupations[pos.index(w)].occupations |= rel.occupations;
+				}
 			}
 
 			switch (orientation)
@@ -776,7 +784,7 @@ struct Sample
 		}
 	}
 
-	template <typename Rng> void reconfigure_root3(Rng& rng)
+	template <typename Rng> void reconfigure_root3(Rng& rng, int vacancies = 0)
 	{
 		if (w != h || w % 6)
 			throw "";
@@ -786,27 +794,18 @@ struct Sample
 
 		int offset = rng() % 6;
 
+		int n = 0;
 		for (int i = 0; i < w; i += 3)
-		{
 			for (int j = 0; j < w; j += 3)
-			{
-				TrimerPos pos;
-				pos = TrimerPos(i + offset / 2, j, offset % 2);
-				trimer_occupations[pos.canonical(w, h).index(w)] = true;
-				for (auto& [pos, rel] : pos.get_clusters_wrel(w, h))
-					vertex_occupations[pos.index(w)].occupations |= rel.occupations;
-
-				pos = TrimerPos(i + offset / 2 + 1, j + 1, offset % 2);
-				trimer_occupations[pos.canonical(w, h).index(w)] = true;
-				for (auto& [pos, rel] : pos.get_clusters_wrel(w, h))
-					vertex_occupations[pos.index(w)].occupations |= rel.occupations;
-
-				pos = TrimerPos(i + offset / 2 + 2, j + 2, offset % 2);
-				trimer_occupations[pos.canonical(w, h).index(w)] = true;
-				for (auto& [pos, rel] : pos.get_clusters_wrel(w, h))
-					vertex_occupations[pos.index(w)].occupations |= rel.occupations;
-			}
-		}
+				for (int s = 0; s < 3; s++)
+					if (n++ >= vacancies)
+					{
+						TrimerPos pos;
+						pos = TrimerPos(i + offset / 2 + s, j + s, offset % 2);
+						trimer_occupations[pos.canonical(w, h).index(w)] = true;
+						for (auto& [pos, rel] : pos.get_clusters_wrel(w, h))
+							vertex_occupations[pos.index(w)].occupations |= rel.occupations;
+					}
 	}
 };
 
@@ -850,103 +849,9 @@ struct PTEnsemble
 	}
 };
 
-void sim_0k()
+void sim(int argc, char** argv)
 {
-	std::minstd_rand rng;
-	rng.seed(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-				 .count());
-
-	int sis[5] = {6, 12, 24, 48, 96};
-
-	for (int si = 0; si < 5; si++)
-	{
-		int s = sis[si];
-		std::vector<TrimerPos> pos;
-		for (int i = 0; i < s; i += 3)
-		{
-			for (int j = 0; j < s; j += 3)
-			{
-				if (i > 0 || j > 0)
-				{
-					pos.emplace_back(i, j, 0);
-				}
-				pos.emplace_back(i + 1, j + 1, 0);
-				pos.emplace_back(i + 2, j + 2, 0);
-			}
-		}
-
-		int N = 200000000;
-		int stride = 50;
-
-		std::stringstream ss;
-
-		ss << "data/" << s << "x" << s << "-3-200000000.50-monomers.dat";
-		std::ofstream of1(ss.str());
-
-		// ss.str("");
-		// ss << "data/" << s << "x" << s << "-3-1000000.1000-trimers-cut.dat";
-		// std::ofstream of2(ss.str());
-
-		// ss.str("");
-		// ss << "data/" << s << "x" << s << "-3-1000000.1000-trimers.dat";
-		// std::ofstream of3(ss.str());
-
-		// ss.str("");
-		// ss << "data/" << s << "x" << s << "-6-10000000-mono-di.dat";
-		// std::ofstream of4(ss.str());
-
-		auto sample = Sample(s, s, pos);
-		for (int i = 0; i < N; i++)
-		{
-			sample.pocket_move(rng, infinity, 0);
-
-			if (i % 1000 == 0)
-			{
-				std::cout << s << " " << i << std::endl;
-			}
-
-			if ((i + 1) % stride != 0)
-				continue;
-
-			// monomer positions
-			auto mono = sample.all_monomers();
-			for (uint j = 0; j < mono.size(); j++)
-			{
-				of1 << mono[j] << " ";
-			}
-			of1 << std::endl;
-
-			// trimer cut
-			// for (int j = 1; j <= s / 2; j++)
-			// {
-			// 	of2 << sample.trimer_correlation(TrimerPos(j, 0, 0)) << " ";
-			// }
-			// of2 << std::endl;
-
-			// trimer positions
-			// for (size_t j = 0; j < sample.trimer_occupations.size(); j++)
-			// {
-			// 	if (sample.trimer_occupations[j])
-			// 	{
-			// 		of3 << TrimerPos::from_index(j, sample.w) << " ";
-			// 	}
-			// }
-			// of3 << std::endl;
-
-			// mono-di
-			// auto mono_di = sample.dimer_monomer_correlation();
-			// for (auto& i : mono_di)
-			// {
-			// 	of << i << " ";
-			// }
-			// of << std::endl;
-		}
-	}
-}
-
-void sim_T(int argc, char** argv)
-{
-	if (argc < 9)
+	if (argc < 10)
 		exit(-1);
 
 	std::minstd_rand rng;
@@ -955,61 +860,56 @@ void sim_T(int argc, char** argv)
 
 	int s = std::stoi(std::string(argv[1]));
 
-	std::vector<TrimerPos> pos;
-	for (int i = 0; i < s; i += 3)
-	{
-		for (int j = 0; j < s; j += 3)
-		{
-			if (i > 0 || j > 0)
-			{
-				pos.emplace_back(i, j, 0);
-			}
-			pos.emplace_back(i + 1, j + 1, 0);
-			pos.emplace_back(i + 2, j + 2, 0);
-		}
-	}
+	auto sample = Sample(s, s);
 
-	auto sample = Sample(s, s, pos);
+	int vacancies = std::stoi(std::string(argv[2]));
+	double u = std::string(argv[3]) == "inf" ? infinity : std::stod(std::string(argv[3]));
+	double j4 = std::stod(std::string(argv[4]));
 
-	double u = std::string(argv[2]) == "inf" ? infinity : std::stod(std::string(argv[1]));
-	double j4 = std::stod(std::string(argv[3]));
+	if (j4 < 0)
+		sample.reconfigure_brick_wall(rng, vacancies);
+	else
+		sample.reconfigure_root3(rng, vacancies);
 
-	int N = std::stoi(std::string(argv[4]));
-	int stride = std::stoi(std::string(argv[5]));
+	int N = std::stoi(std::string(argv[5]));
+	int stride = std::stoi(std::string(argv[6]));
 
-	std::string options = std::string(argv[6]);
-	int interval = std::stoi(std::string(argv[7]));
+	std::string options = std::string(argv[7]);
+	int interval = std::stoi(std::string(argv[8]));
 
-	std::string dir = std::string(argv[8]);
+	std::string dir = std::string(argv[9]);
 
 	std::filesystem::path basepath;
 	int runid = 0;
 	do
 	{
 		std::stringstream ss;
-		ss << s << "x" << s << "_r-3_u" << std::fixed << std::setprecision(2) << u << "_4j" << j4 << "_" << N << "."
-		   << stride << "_" << runid++;
+		ss << s << "x" << s << "_r-" << vacancies * 3 << "_u" << std::fixed << std::setprecision(4) << u << "_4j" << j4
+		   << "_" << N << "." << stride << "_" << runid++;
 		basepath = std::filesystem::path("data") / dir / ss.str();
 	} while (std::filesystem::exists(basepath));
 
 	std::filesystem::create_directories(basepath);
 
 	std::ofstream ofmonomono(basepath / "mono-mono.dat");
+	std::ofstream ofclustercount(basepath / "cluster-count.dat");
 	std::ofstream ofmonodi(basepath / "mono-di.dat");
 	std::ofstream oftritri(basepath / "tri-tri.dat");
 	std::ofstream ofenergy(basepath / "energy.dat");
 	std::ofstream ofconf(basepath / "positions.dat");
 
 	Accumulator<double> amonomono(s * s, interval);
+	Accumulator<double> aclustercount(7, interval);
 	Accumulator<double> amonodi(s * s, interval);
 	Accumulator<double> atritri(s * s * 2, interval);
 	Accumulator<double> aenergy(2, interval);
 
 	bool monomono = options.find('m') != std::string::npos;
+	bool clustercount = options.find('c') != std::string::npos;
 	bool monodi = options.find('d') != std::string::npos;
 	bool tritri = options.find('t') != std::string::npos;
 	bool energy = options.find('e') != std::string::npos;
-	bool conf = options.find('c') != std::string::npos;
+	bool conf = options.find('p') != std::string::npos;
 	bool idealbrickwall = options.find('B') != std::string::npos;
 	bool idealrt3 = options.find('3') != std::string::npos;
 
@@ -1034,14 +934,17 @@ void sim_T(int argc, char** argv)
 
 		if (monomono)
 			sample.record_monomer_correlations(amonomono);
+		if (clustercount)
+			sample.record_cluster_count(aclustercount);
 		if (monodi)
 			sample.record_dimer_monomer_correlations(amonodi);
 		if (tritri)
-			sample.record_trimer_correlations(atritri);
+			sample.record_partial_trimer_correlations(atritri, rng, 3. / s);
 		if (energy)
 			sample.record_energy(aenergy);
 
 		amonomono.write(ofmonomono);
+		aclustercount.write(ofclustercount);
 		amonodi.write(ofmonodi);
 		atritri.write(oftritri);
 		aenergy.write(ofenergy);
@@ -1056,6 +959,7 @@ void sim_T(int argc, char** argv)
 	}
 
 	amonomono.write(ofmonomono, true);
+	aclustercount.write(ofclustercount, true);
 	amonodi.write(ofmonodi, true);
 	atritri.write(oftritri, true);
 	aenergy.write(ofenergy, true);
@@ -1162,4 +1066,4 @@ void test()
 	test_metro();
 }
 
-int main(int argc, char** argv) { sim_T(argc, argv); }
+int main(int argc, char** argv) { sim(argc, argv); }

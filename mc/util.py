@@ -51,7 +51,7 @@ def read_accumulator_raw(fname):
                 val.append(np.array([float(x) for x in line.strip().split()]))
                 state = "m2"
             elif state == "m2":
-                std.append(np.array([float(x) for x in line.strip().split()]) / n[-1])
+                std.append(np.sqrt(np.array([float(x) for x in line.strip().split()]) / n[-1]))
                 state = "count"
     return np.array(n), np.array(val), np.array(std)
 
@@ -289,6 +289,6 @@ def plot_FT(ax, ft, proj="re"):
         cmap = "viridis"
 
     ax.imshow(data, origin="lower", extent=(-extent, extent, -extent, extent), cmap=cmap, norm=norm)
-    ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="k", alpha=0.5, lw=0.5))
-    ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="k", orientation=np.pi/6, alpha=0.5, lw=0.5))
+    ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="k", alpha=0.2, lw=0.5))
+    ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="k", orientation=np.pi/6, alpha=0.2, lw=0.5))
     plt.colorbar(matplotlib.cm.ScalarMappable(norm, cmap=cmap), ax=ax)
