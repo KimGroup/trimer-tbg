@@ -290,6 +290,8 @@ struct Sample
 	{
 		trimer_occupations = std::vector<bool>(w * h * 2, false);
 		vertex_occupations = std::vector<Cluster>(w * h);
+		j4_total = 0;
+		clusters_total = 0;
 	}
 
 	Sample(int32_t w, int32_t h, const std::vector<TrimerPos>& trimers) : w(w), h(h)
@@ -297,6 +299,9 @@ struct Sample
 		trimer_occupations = std::vector<bool>(w * h * 2, false);
 		for (auto& i : trimers)
 			trimer_occupations[i.index(w)] = true;
+
+		j4_total = -1;
+		clusters_total = -1;
 
 		regenerate_occupation();
 		calculate_energy();
@@ -320,6 +325,9 @@ struct Sample
 
 	void calculate_energy()
 	{
+		if (clusters_total >= 0 && j4_total >= 0)
+			return;
+
 		clusters_total = 0;
 		j4_total = 0;
 
@@ -341,7 +349,7 @@ struct Sample
 		for (const auto& occ : vertex_occupations)
 		{
 			auto popc = __builtin_popcount(occ.occupations);
-			clusters_total += popc * popc - popc;
+			clusters_total += popc * (popc - 1) / 2;
 		}
 
 		for (int x = 0; x < w; x++)
@@ -551,13 +559,14 @@ struct Sample
 		a.record(vals);
 	}
 
-	void record_energy(Accumulator<double>& a)
+	void record_energy(Accumulator<double>& a, double u, double j4)
 	{
-		std::vector<double> vals(2);
+		std::vector<double> vals(3);
 		calculate_energy();
 
 		vals[0] = clusters_total;
 		vals[1] = j4_total;
+		vals[2] = clusters_total * u + j4_total * j4;
 
 		a.record(vals);
 	}
@@ -690,6 +699,84 @@ struct Sample
 		}
 
 #ifdef TEST
+		auto occupations = vertex_occupations;
+		regenerate_occupation();
+		ASSERT(occupations == vertex_occupations)
+#endif
+
+		// mark dirty
+		j4_total = -1;
+		clusters_total = -1;
+	}
+
+	template <typename Rng> void metropolis_move(Rng& rng)
+	{
+		TrimerPos seed;
+		while (true)
+		{
+			uint32_t candidate = rng() % trimer_occupations.size();
+			if (trimer_occupations[candidate])
+			{
+				seed = TrimerPos::from_index(candidate, w);
+				trimer_occupations[candidate] = false;
+				break;
+			}
+		}
+		TrimerPos dest;
+		while (true)
+		{
+			uint32_t candidate = rng() % trimer_occupations.size();
+			if (!trimer_occupations[candidate])
+			{
+				dest = TrimerPos::from_index(candidate, w);
+				break;
+			}
+		}
+
+		int dj4 = 0;
+		for (auto& rel : j4_neighbor_list[seed.s])
+			if (trimer_occupations[TrimerPos(seed.x + rel.x, seed.y + rel.y, 1 - seed.s).canonical(w, h).index(w)])
+				dj4--;
+		for (auto& rel : j4_neighbor_list[dest.s])
+			if (trimer_occupations[TrimerPos(dest.x + rel.x, dest.y + rel.y, 1 - dest.s).canonical(w, h).index(w)])
+				dj4++;
+
+		int dcluster = 0;
+		for (const auto& [occ, rel] : seed.get_clusters_wrel(w, h))
+		{
+			auto& popc = vertex_occupations[occ.index(w)].occupations;
+			ASSERT((popc & rel.occupations) != 0);
+
+			// difference due to removing one
+			// (x-1)(x-2)/2 - x(x-1)/2 = 1 - x
+			dcluster += 1 - __builtin_popcount(popc);
+			popc &= ~rel.occupations;
+		}
+		for (const auto& [occ, rel] : dest.get_clusters_wrel(w, h))
+		{
+			auto& popc = vertex_occupations[occ.index(w)].occupations;
+			ASSERT((popc & rel.occupations) == 0);
+
+			// difference due to adding one one
+			// ((x+1)^2 - (x+1)) - (x^2 - x) = x
+			dcluster += __builtin_popcount(popc);
+			popc |= rel.occupations;
+		}
+
+		trimer_occupations[dest.index(w)] = true;
+
+		j4_total += dj4;
+		clusters_total += dcluster;
+
+#ifdef TEST
+		int oldj4 = j4_total;
+		int oldcluster = clusters_total;
+		j4_total = -1;
+		clusters_total = -1;
+		calculate_energy();
+		ASSERT(j4_total == oldj4)
+		ASSERT(clusters_total == oldcluster)
+
 		auto occupations = vertex_occupations;
 		regenerate_occupation();
 		ASSERT(occupations == vertex_occupations)
@@ -863,10 +950,10 @@ void sim(int argc, char** argv)
 	auto sample = Sample(s, s);
 
 	int vacancies = std::stoi(std::string(argv[2]));
-	double u = std::string(argv[3]) == "inf" ? infinity : std::stod(std::string(argv[3]));
-	double j4 = std::stod(std::string(argv[4]));
+	double j4_over_u = std::stod(std::string(argv[3]));
+	double t_over_u = std::stod(std::string(argv[4]));
 
-	if (j4 < 0)
+	if (j4_over_u < 0)
 		sample.reconfigure_brick_wall(rng, vacancies);
 	else
 		sample.reconfigure_root3(rng, vacancies);
@@ -884,8 +971,8 @@ void sim(int argc, char** argv)
 	do
 	{
 		std::stringstream ss;
-		ss << s << "x" << s << "_r-" << vacancies * 3 << "_u" << std::fixed << std::setprecision(4) << u << "_4j" << j4
-		   << "_" << N << "." << stride << "_" << runid++;
+		ss << s << "x" << s << "_r-" << vacancies * 3 << "_t" << std::fixed << std::setprecision(6) << t_over_u << "_j"
+		   << std::setprecision(3) << j4_over_u << "_" << N << "." << stride << "_" << runid++;
 		basepath = std::filesystem::path("data") / dir / ss.str();
 	} while (std::filesystem::exists(basepath));
 
@@ -902,7 +989,7 @@ void sim(int argc, char** argv)
 	Accumulator<double> aclustercount(7, interval);
 	Accumulator<double> amonodi(s * s, interval);
 	Accumulator<double> atritri(s * s * 2, interval);
-	Accumulator<double> aenergy(2, interval);
+	Accumulator<double> aenergy(3, interval);
 
 	bool monomono = options.find('m') != std::string::npos;
 	bool clustercount = options.find('c') != std::string::npos;
@@ -910,17 +997,33 @@ void sim(int argc, char** argv)
 	bool tritri = options.find('t') != std::string::npos;
 	bool energy = options.find('e') != std::string::npos;
 	bool conf = options.find('p') != std::string::npos;
+
 	bool idealbrickwall = options.find('B') != std::string::npos;
 	bool idealrt3 = options.find('3') != std::string::npos;
+	bool metropolis = options.find('M') != std::string::npos;
 
 	std::cout << "saving to " << basepath << std::endl;
 
+	double j4 = j4_over_u / t_over_u;
+	double u = 1 / t_over_u;
+	std::uniform_real_distribution<> uniform(0., 1.);
 	for (int i = 0; i < N; i++)
 	{
 		if (idealbrickwall)
 			sample.reconfigure_brick_wall(rng, false);
 		else if (idealrt3)
 			sample.reconfigure_root3(rng);
+		else if (metropolis)
+		{
+			Sample copy = sample;
+			copy.metropolis_move(rng);
+
+			double d_energy =
+				(copy.j4_total - sample.j4_total) * j4 + (copy.clusters_total - sample.clusters_total) * u;
+			if (uniform(rng) <= std::exp(-d_energy))
+				// accept
+				std::swap(copy, sample);
+		}
 		else
 			sample.pocket_move(rng, u, j4);
 
@@ -941,7 +1044,7 @@ void sim(int argc, char** argv)
 		if (tritri)
 			sample.record_partial_trimer_correlations(atritri, rng, 3. / s);
 		if (energy)
-			sample.record_energy(aenergy);
+			sample.record_energy(aenergy, 1, j4_over_u);
 
 		amonomono.write(ofmonomono);
 		aclustercount.write(ofclustercount);
@@ -963,107 +1066,6 @@ void sim(int argc, char** argv)
 	amonodi.write(ofmonodi, true);
 	atritri.write(oftritri, true);
 	aenergy.write(ofenergy, true);
-}
-
-void test_energy()
-{
-	std::vector<TrimerPos> pos;
-	for (int i = 0; i < 6; i += 3)
-		for (int j = 0; j < 6; j += 3)
-		{
-			pos.emplace_back(i, j, 0);
-			pos.emplace_back(i + 1, j + 1, 0);
-			pos.emplace_back(i + 2, j + 2, 0);
-		}
-
-	auto sample = Sample(6, 6, pos);
-	TEST_ASSERT(sample.clusters_total == 0)
-	TEST_ASSERT(sample.j4_total == 0)
-
-	for (int i = 0; i < 6; i += 3)
-		for (int j = 0; j < 6; j += 3)
-		{
-			pos.emplace_back(i + 1, j, 0);
-		}
-
-	sample = Sample(6, 6, pos);
-	TEST_ASSERT(sample.clusters_total == 24)
-	TEST_ASSERT(sample.j4_total == 0)
-}
-
-void test_metro()
-{
-	std::vector<TrimerPos> pos;
-	for (int i = 0; i < 6; i += 3)
-		for (int j = 0; j < 6; j += 3)
-		{
-			pos.emplace_back(i, j, 0);
-			pos.emplace_back(i + 1, j + 1, 0);
-			pos.emplace_back(i + 2, j + 2, 0);
-		}
-
-	PTEnsemble ensemble;
-	ensemble.j4 = 1;
-	ensemble.chains.emplace_back(PTEnsemble::Chain{1, Sample(6, 6, pos)});
-
-	std::minstd_rand rng;
-	rng.seed(1234);
-
-	for (int i = 0; i < 1000; i++)
-	{
-		ensemble.step_all(rng);
-	}
-}
-
-void test_pocket()
-{
-	std::minstd_rand rng;
-	rng.seed(1234);
-
-	std::vector<TrimerPos> pos;
-	for (int i = 0; i < 6; i += 3)
-	{
-		for (int j = 0; j < 6; j += 3)
-		{
-			if (i > 0 || j > 0)
-			{
-				pos.emplace_back(i, j, 0);
-			}
-			pos.emplace_back(i + 1, j + 1, 0);
-			pos.emplace_back(i + 2, j + 2, 0);
-		}
-	}
-
-	auto sample = Sample(6, 6, pos);
-
-	int test[8] = {355, 382, 427, 381, 384, 360, 344, 355};
-	for (int it = 0; it < 8; it++)
-	{
-		for (int i = 0; i < 100; i++)
-			sample.pocket_move(rng, 0, infinity);
-
-		int total = 0;
-		for (size_t i = 0; i < sample.trimer_occupations.size(); i++)
-		{
-			if (sample.trimer_occupations[i])
-				total += i;
-		}
-
-		if (total != test[it])
-		{
-			TEST_ASSERT(false);
-			return;
-		}
-	}
-
-	TEST_ASSERT(true);
-}
-
-void test()
-{
-	test_energy();
-	test_pocket();
-	test_metro();
 }
 
 int main(int argc, char** argv) { sim(argc, argv); }

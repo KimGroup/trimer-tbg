@@ -53,8 +53,30 @@ def read_accumulator_raw(fname):
             elif state == "m2":
                 std.append(np.sqrt(np.array([float(x) for x in line.strip().split()]) / n[-1]))
                 state = "count"
-    return np.array(n), np.array(val), np.array(std)
+    return np.array(val), np.array(std), np.array(n)
 
+
+def enum_files(dir):
+    import glob
+    import os
+    for fname in glob.glob(dir):
+        basename = fname.split("/")[-2]
+        tokens = basename.split("_")
+        yield fname, { "l": int(tokens[0].split("x")[0]), "r": int(tokens[1][1:]), "t": float(tokens[2][1:]), "j4": float(tokens[3][1:]) }
+
+def get_all_data(glob, transform, skip=0):
+    ts0, ds0 = [], []
+    for fname, props in sorted(enum_files(glob), key=lambda x: x[1]["t"]):
+        ts0.append(props["t"])
+        ds0.append(transform(read_accumulator(fname, skip=skip), props))
+    ts0, ds0 = np.array(ts0), np.array(ds0)
+    return ts0, ds0
+
+def get_all_energies(glob, skip=0):
+    return get_all_data(glob, lambda data, props: data[0][2]/props["l"]**2*3, skip=skip)
+
+def get_all_cvs(glob, skip=0):
+    return get_all_data(glob, lambda data, props: data[1][2]**2/props["t"]**2/props["l"]**2*3, skip=skip)
 
 
 def autocorr(vals, label=None):
@@ -175,40 +197,42 @@ def plot2d_arb(ax, data, xs, ys, title=None):
 
     N = matplotlib.colors.Normalize(vmin=np.min(data), vmax=np.max(data))
     for d, x, y in zip(data, xs, ys):
-        patches.append(matplotlib.patches.RegularPolygon((x, y), numVertices=6, radius=1/np.sqrt(3)))
+        patches.append(matplotlib.patches.RegularPolygon((x, y), numVertices=6, radius=0.5/np.sqrt(3)))
         colors.append(matplotlib.colormaps["viridis"](N(d)))
 
     ax.add_collection(matplotlib.collections.PatchCollection(patches, facecolors=colors))
     plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
     plt.title(title)
 
-def FT_hex(vals, shift=(0,0)):
-    positions_x = np.zeros_like(vals)
-    positions_y = np.zeros_like(vals)
+def FT_hex(vals):
+    newvals = []
+    newx = []
+    newy = []
 
-    for x in range(positions_x.shape[0]):
-        for y in range(positions_x.shape[1]):
-            for s in range(positions_x.shape[2]):
-                if x >= vals.shape[0]//2:
-                    x -= vals.shape[0]
-                if y >= vals.shape[1]//2:
-                    y -= vals.shape[1]
+    radius = vals.shape[0]/4.5
 
-                positions_x[x, y, s] = x + y * 0.5
-                positions_y[x, y, s] = y * np.sqrt(3) / 2
-                if s == 1:
-                    positions_x[x, y, s] += 0.5
-                    positions_y[x, y, s] += 1/np.sqrt(3)/2
+    def add(x, y, s):
+        if s == 1:
+            xy = (x + y * 0.5 + 0.5, y * np.sqrt(3) / 2 + 1/np.sqrt(3)/2)
+        else:
+            xy = (x + y * 0.5, y * np.sqrt(3) / 2)
 
-    # positions_x -= (np.amax(positions_x)-np.amin(positions_x))/2
-    # positions_y -= (np.amax(positions_y)-np.amin(positions_y))/2
+        if (xy[0]**2 + xy[1]**2 < (radius*3)**2):
+            newx.append(xy[0])
+            newy.append(xy[1])
+            newvals.append(vals[x%vals.shape[0], y%vals.shape[1], s] * np.exp(-(xy[0]**2+xy[1]**2)/(2*radius**2)))
 
-    positions_x += shift[0]
-    positions_y += shift[1]
+    bounding = int(vals.shape[0]*2)
+    for i in range(bounding):
+        for j in range(bounding):
+            add(i-bounding//2, j-bounding//2, 0)
+            add(i-bounding//2, j-bounding//2, 1)
 
+    newx = np.array(newx)
+    newy = np.array(newy)
+    newvals = np.array(newvals)
     def corr(k):
-        return np.sum(np.exp(-1j * (positions_x * k[0] * np.pi + positions_y * k[1] * np.pi)) * vals)
-
+        return np.sum(np.exp(-1j * (newx * k[0] * np.pi + newy * k[1] * np.pi)) * newvals)
     return corr
 
 def FT_hex2(vals):
@@ -256,19 +280,109 @@ def FT_hex2(vals):
     return corr
 
 
+def FT_hex3(vals):
+    newvals = []
+    newx = []
+    newy = []
+
+    maxwidth = (vals.shape[0] // 3) * 3
+    nmaxrows = (maxwidth // 3) * 2 + 1
+    ncornerrows = (maxwidth // 3)
+
+    def add(x, y, s):
+        newvals.append(vals[x%vals.shape[0], y%vals.shape[1], s])
+        if s == 1:
+            newx.append(x + y * 0.5 + 0.5)
+            newy.append(y * np.sqrt(3) / 2 + 1/np.sqrt(3)/2)
+        else:
+            newx.append(x + y * 0.5)
+            newy.append(y * np.sqrt(3) / 2)
+
+    # bulk
+    for row in range(nmaxrows):
+        rowstart = (-(nmaxrows//2) - row//2, row - (nmaxrows//2))
+        for col in range(maxwidth):
+            add(rowstart[0]+col, rowstart[1], 0)
+            add(rowstart[0]+col, rowstart[1], 1)
+        if row % 2 == 0:
+            add(rowstart[0]+maxwidth, rowstart[1], 0)
+        else:
+            add(rowstart[0]-1, rowstart[1], 1)
+
+    # lower corner
+    for row in range(ncornerrows):
+        rowstart = (-ncornerrows+(row+1)*2, -ncornerrows-(row+1))
+        width = maxwidth-2-row*3
+        add(rowstart[0]-1, rowstart[1], 1)
+        for col in range(width):
+            add(rowstart[0]+col, rowstart[1], 0)
+            add(rowstart[0]+col, rowstart[1], 1)
+
+    # # upper corner
+    for row in range(ncornerrows):
+        rowstart = (-ncornerrows*2+row+1, ncornerrows+(row+1))
+        width = maxwidth-3-row*3
+        for col in range(width):
+            add(rowstart[0]+col, rowstart[1], 0)
+            add(rowstart[0]+col, rowstart[1], 1)
+        add(rowstart[0]+width, rowstart[1], 0)
+
+    newx = np.array(newx)
+    newy = np.array(newy)
+    newvals = np.array(newvals)
+
+    def corr(k):
+        return np.sum(np.exp(-1j * (newx * k[0] * np.pi + newy * k[1] * np.pi)) * newvals)
+
+    return corr
+
+coords = None
+extent = 2.5
+def make_coords():
+    global coords
+    if coords is not None:
+        return
+
+    X = np.linspace(-extent, extent, 400)
+    Y = np.linspace(-extent, extent, 400)
+
+    coords = np.zeros((len(X), len(Y), 2))
+    for x in range(coords.shape[0]):
+        for y in range(coords.shape[1]):
+            xy = np.array([X[x], Y[y]])
+
+            # fold into fundamental domain
+            origins = list(map(np.array, [(0, 0), (0, 0), (2, 0)]))
+            normals = list(map(np.array, [(0, 1), (np.sin(np.pi/6), -np.cos(np.pi/6)), (-1, 0)]))
+            while True:
+                for o, n in zip(origins, normals):
+                    sxy = xy - o
+                    if np.dot(sxy, n) < 0:
+                        sxy = sxy - (2 * np.dot(sxy, n) * n)
+                        xy = sxy + o
+                        break
+                else:
+                    break
+
+            coords[x, y] = [xy[0], xy[1]]
 
 def plot_FT(ax, ft, proj="re"):
-    extent = 2.35
-    X, Y = np.meshgrid(np.linspace(-extent, extent, 200), np.linspace(-extent, extent, 200))
-    cslft = np.zeros_like(X, dtype=complex)
-    for kx in range(cslft.shape[0]):
-        for ky in range(cslft.shape[1]):
-            cslft[kx, ky] = ft((X[kx, ky], Y[kx, ky]))
+    make_coords()
+
+    datares = 70
+    dataX = np.linspace(-0.02, 2.02, datares * 2)
+    dataY = np.linspace(-0.02, 2.02/np.sqrt(3), datares)
+    data = np.zeros((datares * 2, datares), dtype=complex)
+    for x in range(datares * 2):
+        for y in range(min(datares, x//2 + 1)):
+            data[x, y] = ft((dataX[x], dataY[y]))
+
+    import scipy
+    interp = scipy.interpolate.RegularGridInterpolator((dataX, dataY), data)
+    cslft = interp(coords)
 
     import matplotlib.patches as mpatches
     import matplotlib
-    # data = np.log(np.abs(cslft)+1)
-
     if proj == "re":
         data = np.real(cslft)
         abs = np.amax(np.abs(data))
@@ -288,7 +402,13 @@ def plot_FT(ax, ft, proj="re"):
         norm = matplotlib.colors.LogNorm(vmin=np.amin(data), vmax=np.amax(data))
         cmap = "viridis"
 
-    ax.imshow(data, origin="lower", extent=(-extent, extent, -extent, extent), cmap=cmap, norm=norm)
+    ax.imshow(data.T, origin="lower", extent=(-extent, extent, -extent, extent), cmap=cmap, norm=norm)
     ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="k", alpha=0.2, lw=0.5))
     ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="k", orientation=np.pi/6, alpha=0.2, lw=0.5))
     plt.colorbar(matplotlib.cm.ScalarMappable(norm, cmap=cmap), ax=ax)
+
+
+def plot_timeseries(ax, data, std, label=None):
+    xs = np.arange(len(data))
+    ax.plot(xs, data, label=label)
+    ax.fill_between(xs, data-std, data+std, alpha=0.4)
