@@ -52,7 +52,8 @@
         "ratio": "cpp",
         "codecvt": "cpp",
         "iomanip": "cpp",
-        "complex": "cpp"
+        "complex": "cpp",
+        "thread": "cpp"
     },
     "C_Cpp.vcFormat.indent.accessSpecifiers": true
 }
