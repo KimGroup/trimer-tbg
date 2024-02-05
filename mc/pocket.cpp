@@ -1,4 +1,6 @@
+#include <atomic>
 #include <chrono>
+#include <complex>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -6,6 +8,7 @@
 #include <random>
 #include <sstream>
 #include <stdlib.h>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -36,6 +39,7 @@ void assert_fail() { exit(0); }
 int32_t pmod(int32_t a, int32_t b) { return (a % b + b) % b; }
 
 const double infinity = std::numeric_limits<double>::infinity();
+using complex = std::complex<double>;
 
 struct MonomerPos
 {
@@ -237,10 +241,12 @@ template <typename T> struct Accumulator
 	{
 		total++;
 
+		double inv_total = (1. / total);
+
 		for (size_t i = 0; i < vals.size(); i++)
 		{
 			double delta = vals[i] - mean[i];
-			mean[i] += delta / total;
+			mean[i] += delta * inv_total;
 			double delta2 = vals[i] - mean[i];
 			m2[i] += delta * delta2;
 		}
@@ -273,18 +279,19 @@ struct Sample
 		int u = 0;
 	};
 
-	static const std::array<std::array<MonomerPos, 6>, 2> j4_neighbor_list;
-
-	int32_t w, h;
-
-	int j4_total, clusters_total;
-
-	std::vector<bool> trimer_occupations;
-	std::vector<Cluster> vertex_occupations;
-
+  private:
 	std::vector<TrimerPos> _pocket, _Abar;
 	std::vector<std::pair<MonomerPos, Cluster>> _Abar_entries;
 	std::unordered_map<TrimerPos, PairInteraction> _candidates;
+	std::unordered_map<TrimerPos, std::vector<complex>> trimer_contributions;
+
+  public:
+	static const std::array<std::array<MonomerPos, 6>, 2> j4_neighbor_list;
+
+	int32_t w, h;
+	int j4_total, clusters_total;
+	std::vector<bool> trimer_occupations;
+	std::vector<Cluster> vertex_occupations;
 
 	Sample(int32_t w, int32_t h) : w(w), h(h)
 	{
@@ -486,15 +493,91 @@ struct Sample
 		a.record(vals);
 	}
 
+	void record_order_parameters(Accumulator<double>& a) const
+	{
+		std::vector<double> vals(9);
+
+		const double rt3 = std::sqrt(3.);
+		const double Kpx0 = 4. / 3, Kpy0 = 0;
+		const double Kpx1 = -2. / 3, Kpy1 = 2 * rt3 / 3;
+		const double Kpx2 = -2. / 3, Kpy2 = -2 * rt3 / 3;
+		const double Mpx0 = 0, Mpy0 = 2 * rt3 / 3;
+		const double Mpx1 = 1, Mpy1 = -rt3 / 3;
+		const double Mpx2 = -1, Mpy2 = -rt3 / 3;
+
+		complex M0, M1, M2, K0, K1, K2;
+
+		double AmB = 0;
+
+		for (size_t i = 0; i < trimer_occupations.size(); i++)
+		{
+			if (trimer_occupations[i])
+			{
+				auto pos = TrimerPos::from_index(i, w);
+				AmB += pos.s == 0 ? 1 : -1;
+
+				if (!_trimer_contributions.contains(pos))
+				{
+					double x = pos.x + pos.y * 0.5;
+					double y = pos.y * rt3 / 2;
+					if (pos.s == 1)
+					{
+						x += 0.5;
+						y += 2 / rt3;
+					}
+
+					double dot = (x * Mpx0 + y * Mpy0) * M_PI;
+					_trimer_contributions[pos].push_back(complex(std::cos(dot), std::sin(dot)));
+					dot = (x * Mpx1 + y * Mpy1) * M_PI;
+					_trimer_contributions[pos].push_back(complex(std::cos(dot), std::sin(dot)));
+					dot = (x * Mpx2 + y * Mpy2) * M_PI;
+					_trimer_contributions[pos].push_back(complex(std::cos(dot), std::sin(dot)));
+
+					dot = (x * Kpx0 + y * Kpy0) * M_PI;
+					_trimer_contributions[pos].push_back(complex(std::cos(dot), std::sin(dot)));
+					dot = (x * Kpx1 + y * Kpy1) * M_PI;
+					_trimer_contributions[pos].push_back(complex(std::cos(dot), std::sin(dot)));
+					dot = (x * Kpx2 + y * Kpy2) * M_PI;
+					_trimer_contributions[pos].push_back(complex(std::cos(dot), std::sin(dot)));
+				}
+
+				auto& cont = _trimer_contributions[pos];
+				M0 += cont[0];
+				M1 += cont[1];
+				M2 += cont[2];
+				K0 += cont[3];
+				K1 += cont[4];
+				K2 += cont[5];
+			}
+		}
+
+		vals[0] = std::abs(M0) + std::abs(M1) + std::abs(M2);
+		vals[1] = vals[0] * vals[0];
+		vals[2] = vals[1] * vals[1];
+
+		vals[3] = std::abs(K0) + std::abs(K1) + std::abs(K2);
+		vals[4] = vals[3] * vals[3];
+		vals[5] = vals[4] * vals[4];
+
+		vals[6] = AmB;
+		vals[7] = vals[6] * vals[6];
+		vals[8] = vals[7] * vals[7];
+
+		a.record(vals);
+	}
+
 	template <typename Rng>
-	void record_partial_trimer_correlations(Accumulator<double>& a, Rng& rng, double probability) const
+	void record_partial_trimer_correlations(Accumulator<double>& a, Rng& rng, double fraction) const
 	{
 		std::vector<double> vals(w * h * 2);
 		std::uniform_real_distribution<> uniform(0., 1.);
 
+		int seen = 0;
 		for (size_t i = 0; i < trimer_occupations.size(); i++)
 		{
-			if (trimer_occupations[i] && uniform(rng) <= probability)
+			if (trimer_occupations[i] && uniform(rng) <= fraction)
+			{
+				seen++;
 				for (size_t j = 0; j < trimer_occupations.size(); j++)
 					if (trimer_occupations[j])
 					{
@@ -511,18 +594,48 @@ struct Sample
 
 						vals[d.canonical(w, h).index(w)]++;
 					}
+			}
+		}
+
+		if (seen > 0)
+		{
+			double inv_seen = 1. / seen;
+			for (auto& n : vals)
+				n *= inv_seen;
 		}
 
 		a.record(vals);
 	}
 
-	void record_monomers(Accumulator<double>& a) const
+	template <typename Rng>
+	void record_partial_monomer_correlations(Accumulator<double>& a, Rng& rng, double fraction) const
 	{
 		std::vector<double> vals(w * h);
+		std::vector<MonomerPos> pos;
 
 		for (uint i = 0; i < vertex_occupations.size(); i++)
 			if (vertex_occupations[i].occupations == 0)
-				vals[i]++;
+				pos.push_back(MonomerPos::from_index(i, w));
+
+		std::shuffle(pos.begin(), pos.end(), rng);
+		size_t sample_count = std::min(pos.size(), (size_t)(fraction * pos.size()) + 1);
+
+		for (uint i = 0; i < sample_count; i++)
+		{
+			for (uint j = 0; j < pos.size(); j++)
+			{
+				if (j == i)
+					continue;
+
+				auto d = pos[i] - pos[j];
+				vals[d.canonical(w, h).index(w)] += 0.5;
+				vals[(-d).canonical(w, h).index(w)] += 0.5;
+			}
+		}
+
+		double inv_count = 1. / sample_count;
+		for (auto& x : vals)
+			x *= inv_count;
 
 		a.record(vals);
 	}
@@ -541,10 +654,14 @@ struct Sample
 			for (uint j = i + 1; j < pos.size(); j++)
 			{
 				auto d = pos[i] - pos[j];
-				vals[d.canonical(w, h).index(w)]++;
-				vals[(-d).canonical(w, h).index(w)]++;
+				vals[d.canonical(w, h).index(w)] += 1;
+				vals[(-d).canonical(w, h).index(w)] += 1;
 			}
 		}
+
+		double inv_count = 1. / pos.size();
+		for (auto& x : vals)
+			x *= inv_count;
 
 		a.record(vals);
 	}
@@ -895,7 +1012,6 @@ struct Sample
 					}
 	}
 };
-
 const std::array<std::array<MonomerPos, 6>, 2> Sample::j4_neighbor_list = {
 	std::array<MonomerPos, 6>{MonomerPos{0, 1}, {1, 0}, {0, -2}, {1, -2}, {-2, 0}, {-2, 1}},
 	{MonomerPos{0, 2}, {-1, 2}, {2, 0}, {2, -1}, {0, -1}, {-1, 0}}};
@@ -909,26 +1025,51 @@ struct PTEnsemble
 	};
 
 	std::vector<Chain> chains;
-	int parity;
+	int parity = 0;
+	int batch_steps = 1;
 
 	double j4;
 	double u;
 
+	PTEnsemble(double j4, double u, int batch_steps) : j4(j4), u(u), batch_steps(batch_steps) {}
+
+	std::atomic_bool threads_active = false;
+	std::atomic_int threads_done = 0;
+
+	void thread_job(size_t index)
+	{
+		std::minstd_rand rng;
+		rng.seed(
+			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+				.count());
+	}
+
 	template <typename Rng> void step_all(Rng& rng)
 	{
 		std::uniform_real_distribution<> uniform(0., 1.);
+		std::vector<std::thread> threads;
 
 		for (size_t i = 0; i < chains.size(); i++)
 		{
+			threads.push_back(std::thread([this, i] { for (size_t j = 0; j < batch_steps; j++) }));
 			chains[i].sample.pocket_move(rng, u / chains[i].temp, j4 / chains[i].temp);
 		}
 
+		for (auto& thread : threads)
+			thread.join();
+
 		for (size_t i = parity++ % 2; i < chains.size() - 1; i += 2)
 		{
-			double e0 = chains[i].sample.clusters_total * u + chains[i].sample.j4_total * j4;
-			double e1 = chains[i + 1].sample.clusters_total * u + chains[i + 1].sample.j4_total * j4;
+			chains[i].sample.calculate_energy();
+			chains[i + 1].sample.calculate_energy();
 
-			double action = (1 / chains[i + 1].temp - 1 / chains[i].temp) * (e0 - e1);
+			int du = chains[i].sample.clusters_total - chains[i + 1].sample.clusters_total;
+			int dj4 = chains[i].sample.j4_total - chains[i + 1].sample.j4_total;
+
+			double u_factor = du != 0 ? u * du : 0;
+			double j4_factor = dj4 != 0 ? j4 * dj4 : 0;
+
+			double action = (1 / chains[i + 1].temp - 1 / chains[i].temp) * (u_factor - j4_factor);
 
 			if (uniform(rng) < std::exp(-action))
 				std::swap(chains[i].sample, chains[i + 1].sample);
@@ -984,8 +1125,14 @@ void sim(int argc, char** argv)
 	std::ofstream oftritri(basepath / "tri-tri.dat");
 	std::ofstream ofenergy(basepath / "energy.dat");
 	std::ofstream ofconf(basepath / "positions.dat");
+	std::ofstream oforder(basepath / "order.dat");
+	std::ofstream ofinfo(basepath / "info.dat");
+
+	ofinfo << "The order parameters are: |n(M)|, |n(M)|^2, |n(M)|^4, |n(K)|, |n(K)|^2, |n(K)|^4, A-B, |A-B|^2, |A-B|^4"
+		   << std::endl;
 
 	Accumulator<double> amonomono(s * s, interval);
+	Accumulator<double> aorder(9, interval);
 	Accumulator<double> aclustercount(7, interval);
 	Accumulator<double> amonodi(s * s, interval);
 	Accumulator<double> atritri(s * s * 2, interval);
@@ -998,15 +1145,19 @@ void sim(int argc, char** argv)
 	bool energy = options.find('e') != std::string::npos;
 	bool conf = options.find('p') != std::string::npos;
 
+	bool order = options.find('o') != std::string::npos;
+
 	bool idealbrickwall = options.find('B') != std::string::npos;
 	bool idealrt3 = options.find('3') != std::string::npos;
 	bool metropolis = options.find('M') != std::string::npos;
 
 	std::cout << "saving to " << basepath << std::endl;
 
-	double j4 = j4_over_u / t_over_u;
+	double j4 = t_over_u > 0 ? j4_over_u / t_over_u : j4_over_u;
 	double u = 1 / t_over_u;
+
 	std::uniform_real_distribution<> uniform(0., 1.);
+
 	for (int i = 0; i < N; i++)
 	{
 		if (idealbrickwall)
@@ -1036,21 +1187,24 @@ void sim(int argc, char** argv)
 			continue;
 
 		if (monomono)
-			sample.record_monomer_correlations(amonomono);
+			sample.record_partial_monomer_correlations(amonomono, rng, 12. / (vacancies * 3));
 		if (clustercount)
 			sample.record_cluster_count(aclustercount);
 		if (monodi)
 			sample.record_dimer_monomer_correlations(amonodi);
 		if (tritri)
-			sample.record_partial_trimer_correlations(atritri, rng, 3. / s);
+			sample.record_partial_trimer_correlations(atritri, rng, 12. / (s * s / 3));
 		if (energy)
 			sample.record_energy(aenergy, 1, j4_over_u);
+		if (order)
+			sample.record_order_parameters(aorder);
 
 		amonomono.write(ofmonomono);
 		aclustercount.write(ofclustercount);
 		amonodi.write(ofmonodi);
 		atritri.write(oftritri);
 		aenergy.write(ofenergy);
+		aorder.write(oforder);
 
 		if (conf)
 		{
@@ -1066,6 +1220,7 @@ void sim(int argc, char** argv)
 	amonodi.write(ofmonodi, true);
 	atritri.write(oftritri, true);
 	aenergy.write(ofenergy, true);
+	aorder.write(oforder, true);
 }
 
 int main(int argc, char** argv) { sim(argc, argv); }

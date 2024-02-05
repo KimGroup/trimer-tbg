@@ -51,6 +51,8 @@
         "chrono": "cpp",
         "ratio": "cpp",
         "codecvt": "cpp",
-        "iomanip": "cpp"
-    }
+        "iomanip": "cpp",
+        "complex": "cpp"
+    },
+    "C_Cpp.vcFormat.indent.accessSpecifiers": true
 }

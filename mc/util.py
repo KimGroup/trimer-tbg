@@ -36,7 +36,7 @@ def read_accumulator(fname, skip=0, take=None):
     if m2 is None:
         raise ValueError(fname)
 
-    return mean, np.sqrt(m2/total)
+    return mean, np.sqrt(m2/total), total
 
 
 def read_accumulator_raw(fname):
@@ -58,19 +58,31 @@ def read_accumulator_raw(fname):
 
 def enum_files(dir):
     import glob
-    import os
     for fname in glob.glob(dir):
         basename = fname.split("/")[-2]
         tokens = basename.split("_")
         yield fname, { "l": int(tokens[0].split("x")[0]), "r": int(tokens[1][1:]), "t": float(tokens[2][1:]), "j4": float(tokens[3][1:]) }
 
-def get_all_data(glob, transform, skip=0):
-    ts0, ds0 = [], []
-    for fname, props in sorted(enum_files(glob), key=lambda x: x[1]["t"]):
-        ts0.append(props["t"])
-        ds0.append(transform(read_accumulator(fname, skip=skip), props))
-    ts0, ds0 = np.array(ts0), np.array(ds0)
-    return ts0, ds0
+def get_all_data(glob, transform, skip=0, by="t", with_counts=False):
+    ts0, ds0, ns = [], [], []
+    for fname, props in sorted(enum_files(glob), key=lambda x: x[1][by]):
+        ts0.append(props[by])
+        data = read_accumulator(fname, skip=skip)
+        ds0.append(transform(data, props))
+        ns.append(data[2])
+
+    if with_counts:
+        try:
+            ts0, ds0, n0 = np.array(ts0), np.array(ds0), np.array(ns)
+            return ts0, ds0, n0
+        except ValueError:
+            return np.array(ts0), ds0, np.array(ns)
+    else:
+        try:
+            ts0, ds0 = np.array(ts0), np.array(ds0)
+            return ts0, ds0
+        except ValueError:
+            return np.array(ts0), ds0
 
 def get_all_energies(glob, skip=0):
     return get_all_data(glob, lambda data, props: data[0][2]/props["l"]**2*3, skip=skip)
@@ -105,7 +117,7 @@ def bin(data, width):
         data = np.array(data)
     return data[:(data.size // width) * width].reshape(-1, width).mean(axis=1)
 
-def plot2d_old(d, l, scale=None, title=None):
+def plot2d_old(ax, d, l, scale=None, title=None):
     data = np.zeros((l, l))
     for key, value in d.items():
         data[key[0]+l//2, key[1]+l//2] = value
@@ -114,7 +126,6 @@ def plot2d_old(d, l, scale=None, title=None):
     if scale is not None:
         data = scale(data)
 
-    fig, ax = plt.subplots(1, 1, figsize=[6, 4])
     ax.axis("off")
     ax.set_xlim([-25, 25])
     ax.set_ylim([-15, 15])
@@ -129,7 +140,7 @@ def plot2d_old(d, l, scale=None, title=None):
             patches.append(matplotlib.patches.Circle((i+j/2, j*np.sqrt(3)/2), radius=0.5))
             colors.append(matplotlib.colormaps["viridis"](N(data[(i+l//2), (j+l//2)])))
     ax.add_collection(matplotlib.collections.PatchCollection(patches, facecolors=colors))
-    fig.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
+    plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
     plt.title(f"monomer-monomer correlation L={l} filling=-1" if title is None else title)
 
 def plot2d(ax, data, title=None):
@@ -247,10 +258,10 @@ def FT_hex2(vals):
         newvals.append(vals[x%vals.shape[0], y%vals.shape[1], s])
         if s == 1:
             newx.append(x + y * 0.5 + 0.5)
-            newy.append(y * np.sqrt(3) / 2 + 1/np.sqrt(3)/2)
+            newy.append(y * np.sqrt(3)/2 + 1/np.sqrt(3)/2)
         else:
             newx.append(x + y * 0.5)
-            newy.append(y * np.sqrt(3) / 2)
+            newy.append(y * np.sqrt(3)/2)
 
     for row in range(-halfnrows, halfnrows+1):
         if row < 0:
@@ -336,6 +347,7 @@ def FT_hex3(vals):
 
     return corr
 
+
 coords = None
 extent = 2.5
 def make_coords():
@@ -366,43 +378,64 @@ def make_coords():
 
             coords[x, y] = [xy[0], xy[1]]
 
-def plot_FT(ax, ft, proj="re"):
+
+def plot_FT(ax, ft, proj="re", fold=True):
     make_coords()
 
-    datares = 70
-    dataX = np.linspace(-0.02, 2.02, datares * 2)
-    dataY = np.linspace(-0.02, 2.02/np.sqrt(3), datares)
-    data = np.zeros((datares * 2, datares), dtype=complex)
-    for x in range(datares * 2):
-        for y in range(min(datares, x//2 + 1)):
-            data[x, y] = ft((dataX[x], dataY[y]))
-
-    import scipy
-    interp = scipy.interpolate.RegularGridInterpolator((dataX, dataY), data)
-    cslft = interp(coords)
+    if fold:
+        datares = 75
+        dataX = np.linspace(-0.02, 2.02, datares * 2)
+        dataY = np.linspace(-0.02, 2.02/np.sqrt(3), datares)
+        data = np.zeros((datares * 2, datares), dtype=complex)
+        for x in range(datares * 2):
+            for y in range(min(datares, x//2 + 3)):
+                data[x, y] = ft((dataX[x], dataY[y]))
+        import scipy
+        interp = scipy.interpolate.RegularGridInterpolator((dataX, dataY), data)
+        interped = interp(coords)
+    else:
+        datares = 50
+        dataX = np.linspace(-extent, extent, datares*2)
+        dataY = np.linspace(-extent, extent, datares*2)
+        data = np.zeros((datares*2, datares*2), dtype=complex)
+        for x in range(datares*2):
+            for y in range(datares*2):
+                data[x, y] = ft((dataX[x], dataY[y]))
+        interped = data
 
     import matplotlib.patches as mpatches
     import matplotlib
     if proj == "re":
-        data = np.real(cslft)
-        abs = np.amax(np.abs(data))
+        mapped = np.real(interped)
+        abs = np.amax(np.abs(mapped))
         norm = matplotlib.colors.Normalize(vmin=-abs, vmax=abs)
         cmap = "RdBu"
     elif proj == "im":
-        data = np.imag(cslft)
-        abs = np.amax(np.abs(data))
+        mapped = np.imag(interped)
+        abs = np.amax(np.abs(mapped))
         norm = matplotlib.colors.Normalize(vmin=-abs, vmax=abs)
         cmap = "RdBu"
     elif proj == "abs":
-        data = np.abs(cslft)
-        norm = matplotlib.colors.Normalize(vmin=np.amin(data), vmax=np.amax(data))
+        mapped = np.abs(interped)
+        norm = matplotlib.colors.Normalize(vmin=np.amin(mapped), vmax=np.amax(mapped))
         cmap = "viridis"
     elif proj == "logabs":
-        data = np.abs(cslft) + 1
-        norm = matplotlib.colors.LogNorm(vmin=np.amin(data), vmax=np.amax(data))
+        mapped = np.abs(interped) + 0.0001
+        norm = matplotlib.colors.LogNorm(vmin=np.amin(mapped), vmax=np.amax(mapped))
+        cmap = "viridis"
+    elif proj == "logre":
+        mapped = np.abs(np.real(interped)) + 0.0001
+        norm = matplotlib.colors.LogNorm(vmin=np.amin(mapped), vmax=np.amax(mapped))
         cmap = "viridis"
 
-    ax.imshow(data.T, origin="lower", extent=(-extent, extent, -extent, extent), cmap=cmap, norm=norm)
+    # mapped = np.abs(data) + 1
+    # ax.imshow(mapped.T, origin="lower", extent=(0, 2, 0, 1.15), cmap=cmap, norm=norm)
+    # ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="k", alpha=0.2, lw=0.5))
+    # ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="k", orientation=np.pi/6, alpha=0.2, lw=0.5))
+    # plt.colorbar(matplotlib.cm.ScalarMappable(norm, cmap=cmap), ax=ax)
+    # return
+
+    ax.imshow(mapped.T, origin="lower", extent=(-extent, extent, -extent, extent), cmap=cmap, norm=norm)
     ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="k", alpha=0.2, lw=0.5))
     ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="k", orientation=np.pi/6, alpha=0.2, lw=0.5))
     plt.colorbar(matplotlib.cm.ScalarMappable(norm, cmap=cmap), ax=ax)
