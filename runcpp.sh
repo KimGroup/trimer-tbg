@@ -18,7 +18,7 @@
 
 # srun --exclusive -n 1 ./a.out 108 1 0 0 50000000 20 mtd 5000 t0j0/doped/-1 &
 # srun --exclusive -n 1 ./a.out 120 1 0 0 50000000 20 mtd 5000 t0j0/doped/-1 &
-srun --exclusive -n 1 ./a.out 96 1 0 0 200000000 10 mtd 50000 t0j0/doped/-1 &
+srun --exclusive -n 1 ./a.out 96 1 0 0 200000000 10 mtd 2000 t0j0/doped/-1 &
 
 # srun --exclusive -n 1 ./a.out 24 1 0 0 50000000 20 mtd 5000 t0j0/doped/1.196 &
 # srun --exclusive -n 1 ./a.out 48 4 0 0 50000000 20 mtd 5000 t0j0/doped/1.196 &

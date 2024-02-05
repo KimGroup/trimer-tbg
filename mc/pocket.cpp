@@ -975,8 +975,9 @@ struct Options
 	bool metropolis;
 
 	int total_steps;
-	int observation_interval;
+	int decorr_interval;
 	int accumulator_interval;
+	int swap_interval = 10;
 
 	double j4_over_u;
 	std::vector<double> temperatures;
@@ -986,7 +987,7 @@ struct Options
 
 struct PTWorker
 {
-	const Options options;
+	const Options& options;
 
 	double temperature;
 	Sample sample;
@@ -1031,7 +1032,7 @@ struct PTWorker
 			std::stringstream ss;
 			ss << options.length << "x" << options.length << "_r-" << options.mono_vacancies << "_t" << std::fixed
 			   << std::setprecision(6) << temperature << "_j" << std::setprecision(3) << options.j4_over_u << "_"
-			   << options.total_steps << "." << options.observation_interval << "_" << runid++;
+			   << options.total_steps << "." << options.decorr_interval << "_" << runid++;
 			basepath = std::filesystem::path("data") / options.directory / ss.str();
 		} while (std::filesystem::exists(basepath));
 		std::filesystem::create_directories(basepath);
@@ -1066,7 +1067,7 @@ struct PTWorker
 		double u = 1 / temperature;
 
 		std::uniform_real_distribution<> uniform(0., 1.);
-		for (int i = 0; i < options.observation_interval; i++)
+		for (int i = 0; i < options.decorr_interval; i++)
 		{
 			if (options.idealbrickwall)
 				sample.reconfigure_brick_wall(rng, false);
@@ -1095,7 +1096,7 @@ struct PTWorker
 		if (options.out_monodi)
 			sample.record_dimer_monomer_correlations(amonodi);
 		if (options.out_tritri)
-			sample.record_partial_trimer_correlations(atritri, rng, 32. / (sample.w * sample.h / 3));
+			sample.record_partial_trimer_correlations(atritri, rng, 64. / (sample.w * sample.h / 3));
 		if (options.out_energy)
 			sample.record_energy(aenergy, 1, options.j4_over_u);
 		if (options.out_order)
@@ -1174,7 +1175,10 @@ struct PTEnsemble
 			auto begin = std::chrono::high_resolution_clock::now();
 
 			for (size_t i = 0; i < chains.size(); i++)
-				threads.push_back(std::thread([this, i] { chains[i].step(); }));
+				threads.push_back(std::thread([this, i] {
+					for (int j = 0; j < options.swap_interval; j++)
+						chains[i].step();
+				}));
 
 			auto end1 = std::chrono::high_resolution_clock::now();
 
@@ -1188,7 +1192,10 @@ struct PTEnsemble
 			timing.record(timings);
 		}
 		else
-			chains[0].step();
+		{
+			for (int i = 0; i < options.swap_interval; i++)
+				chains[0].step();
+		}
 
 		for (size_t i = parity++ % 2; i < chains.size() - 1; i += 2)
 		{
@@ -1198,17 +1205,15 @@ struct PTEnsemble
 			int u_factor = chains[i].sample.clusters_total - chains[i + 1].sample.clusters_total;
 			int j4_factor = (chains[i].sample.j4_total - chains[i + 1].sample.j4_total) * options.j4_over_u;
 
-			double action = (1 / chains[i + 1].temperature - 1 / chains[i].temperature) * (u_factor - j4_factor);
+			double action = (1 / chains[i + 1].temperature - 1 / chains[i].temperature) * (u_factor + j4_factor);
 
 			if (uniform(rng) < std::exp(-action))
-			{
 				std::swap(chains[i].sample, chains[i + 1].sample);
-			}
 		}
 
-		steps_done += options.observation_interval;
+		steps_done += options.decorr_interval;
 
-		if (steps_done >= last_output + 1000)
+		if (steps_done >= last_output + 2500)
 		{
 			last_output = steps_done;
 
@@ -1249,7 +1254,7 @@ void sim(int argc, char** argv)
 		options.temperatures.push_back(std::stod(token));
 
 	options.total_steps = std::stoi(std::string(argv[5]));
-	options.observation_interval = std::stoi(std::string(argv[6]));
+	options.decorr_interval = std::stoi(std::string(argv[6]));
 
 	std::string optstring = std::string(argv[7]);
 	options.accumulator_interval = std::stoi(std::string(argv[8]));
