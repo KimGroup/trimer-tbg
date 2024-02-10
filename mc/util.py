@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import matplotlib
 
 def read_accumulator(fname, skip=0, take=None):
     state = "count"
@@ -9,29 +11,34 @@ def read_accumulator(fname, skip=0, take=None):
     mean = None
     m2 = None
 
+    skipped = 0
+
     with open(fname) as f:
         for index, line in enumerate(f):
-            if index < skip*3: continue
-            if take is not None and index > (skip + take)*3: break
+            if take is not None and n > take: break
 
             if state == "count":
-                n = int(line.strip())
                 state = "val"
+                n = int(line.strip())
             elif state == "val":
-                curval = np.array([float(x) for x in line.strip().split()])
                 state = "m2"
+                if skipped >= skip:
+                    curval = np.array([float(x) for x in line.strip().split()])
             elif state == "m2":
-                curm2 = np.array([float(x) for x in line.strip().split()])
-                if mean is None:
-                    mean = curval
-                    m2 = curm2
-                    total = n
-                else:
-                    delta = curval - mean
-                    mean = (total * mean + curval * n) / (total + n)
-                    m2 = m2 + curm2 + np.power(delta, 2) * n * total / (n + total)
-                    total += n
                 state = "count"
+                if skipped < skip:
+                    skipped += n
+                else:
+                    curm2 = np.array([float(x) for x in line.strip().split()])
+                    if mean is None:
+                        mean = curval
+                        m2 = curm2
+                        total = n
+                    else:
+                        delta = curval - mean
+                        mean = (total * mean + curval * n) / (total + n)
+                        m2 = m2 + curm2 + np.power(delta, 2) * n * total / (n + total)
+                        total += n
 
     if m2 is None:
         raise ValueError(fname)
@@ -63,11 +70,12 @@ def enum_files(dir):
         tokens = basename.split("_")
         yield fname, { "l": int(tokens[0].split("x")[0]), "r": int(tokens[1][1:]), "t": float(tokens[2][1:]), "j4": float(tokens[3][1:]) }
 
-def get_all_data(glob, transform, skip=0, by="t", with_counts=False):
+def get_all_data(glob, transform, filter=lambda _: True, skip=0, by="t", with_counts=False, take=None):
     ts0, ds0, ns = [], [], []
     for fname, props in sorted(enum_files(glob), key=lambda x: x[1][by]):
+        if not filter(props): continue
         ts0.append(props[by])
-        data = read_accumulator(fname, skip=skip)
+        data = read_accumulator(fname, skip=skip, take=take)
         ds0.append(transform(data, props))
         ns.append(data[2])
 
@@ -84,12 +92,13 @@ def get_all_data(glob, transform, skip=0, by="t", with_counts=False):
         except ValueError:
             return np.array(ts0), ds0
 
-def get_all_energies(glob, skip=0):
-    return get_all_data(glob, lambda data, props: data[0][2]/props["l"]**2*3, skip=skip)
+def get_all_energies(glob, skip=0, take=None):
+    return get_all_data(glob, lambda data, props: data[0][2]/props["l"]**2*3, skip=skip, take=take)
 
-def get_all_cvs(glob, skip=0):
-    return get_all_data(glob, lambda data, props: data[1][2]**2/props["t"]**2/props["l"]**2*3, skip=skip)
-
+def get_all_cvs(glob, skip=0, take=None):
+    return get_all_data(glob, lambda data, props:
+                        np.zeros_like(data[1][2]) if props["t"] == 0 else
+                        data[1][2]**2/props["t"]**2/(props["l"]**2/3 - props["r"]/3), skip=skip, take=take)
 
 def autocorr(vals, label=None):
     vals = np.array(vals)
@@ -131,7 +140,6 @@ def plot2d_old(ax, d, l, scale=None, title=None):
     ax.set_ylim([-15, 15])
     ax.set_aspect("equal")
 
-    import matplotlib
     patches = []
     colors = []
     N = matplotlib.colors.Normalize(vmin=np.min(data), vmax=np.max(data))
@@ -143,16 +151,21 @@ def plot2d_old(ax, d, l, scale=None, title=None):
     plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
     plt.title(f"monomer-monomer correlation L={l} filling=-1" if title is None else title)
 
-def plot2d(ax, data, title=None):
+def plot2d(ax, data, log=False, show_dimer=False):
     ax.axis("off")
     ax.set_xlim([-25, 25])
     ax.set_ylim([-15, 15])
     ax.set_aspect("equal")
 
-    import matplotlib
     patches = []
     colors = []
-    N = matplotlib.colors.Normalize(vmin=np.min(data), vmax=np.max(data))
+
+    if log:
+        data = data + 0.000001
+        N = matplotlib.colors.LogNorm(vmin=np.amin(data), vmax=np.amax(data))
+    else:
+        N = matplotlib.colors.Normalize(vmin=np.min(data), vmax=np.max(data))
+
     for i in range(data.shape[0]):
         for j in range(data.shape[1]):
             colors.append(matplotlib.colormaps["viridis"](N(data[i, j])))
@@ -163,8 +176,10 @@ def plot2d(ax, data, title=None):
             patches.append(matplotlib.patches.RegularPolygon((i+j/2, j*np.sqrt(3)/2), numVertices=6, radius=1/np.sqrt(3), orientation=0))
 
     ax.add_collection(matplotlib.collections.PatchCollection(patches, facecolors=colors))
+    if show_dimer:
+        ax.add_patch(mpatches.Rectangle((-0.25, -0.25), 1.5, 0.5, ec=None, fc="white", zorder=1))
+
     plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
-    plt.title(title)
 
 def plot2d_hex(ax, data, title=None):
     ax.axis("off")
@@ -172,7 +187,6 @@ def plot2d_hex(ax, data, title=None):
     ax.set_ylim([-15, 15])
     ax.set_aspect("equal")
 
-    import matplotlib
     patches = []
     colors = []
     N = matplotlib.colors.Normalize(vmin=np.min(data), vmax=np.max(data))
@@ -202,7 +216,6 @@ def plot2d_arb(ax, data, xs, ys, title=None):
     ax.set_ylim([-15, 15])
     ax.set_aspect("equal")
 
-    import matplotlib
     patches = []
     colors = []
 
@@ -242,6 +255,7 @@ def FT_hex(vals):
     newx = np.array(newx)
     newy = np.array(newy)
     newvals = np.array(newvals)
+
     def corr(k):
         return np.sum(np.exp(-1j * (newx * k[0] * np.pi + newy * k[1] * np.pi)) * newvals)
     return corr
@@ -403,8 +417,6 @@ def plot_FT(ax, ft, proj="re", fold=True):
                 data[x, y] = ft((dataX[x], dataY[y]))
         interped = data
 
-    import matplotlib.patches as mpatches
-    import matplotlib
     if proj == "re":
         mapped = np.real(interped)
         abs = np.amax(np.abs(mapped))
@@ -428,12 +440,6 @@ def plot_FT(ax, ft, proj="re", fold=True):
         norm = matplotlib.colors.LogNorm(vmin=np.amin(mapped), vmax=np.amax(mapped))
         cmap = "viridis"
 
-    # mapped = np.abs(data) + 1
-    # ax.imshow(mapped.T, origin="lower", extent=(0, 2, 0, 1.15), cmap=cmap, norm=norm)
-    # ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="k", alpha=0.2, lw=0.5))
-    # ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="k", orientation=np.pi/6, alpha=0.2, lw=0.5))
-    # plt.colorbar(matplotlib.cm.ScalarMappable(norm, cmap=cmap), ax=ax)
-    # return
 
     ax.imshow(mapped.T, origin="lower", extent=(-extent, extent, -extent, extent), cmap=cmap, norm=norm)
     ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="k", alpha=0.2, lw=0.5))

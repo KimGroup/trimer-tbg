@@ -1,55 +1,124 @@
 #!/bin/bash
 #SBATCH --partition=kim,default_partition
 #SBATCH --mem-per-cpu=1G
-#SBATCH --time=3-0
+#SBATCH --time=2-0
 #SBATCH --cpus-per-task=1
-#SBATCH --ntasks=1
+#SBATCH --ntasks=24
 
-# srun --exclusive -n 1 ./a.out 12 1 0 0 50000000 20 mtd 5000 t0j0/doped/1.48 &
-# srun --exclusive -n 1 ./a.out 24 4 0 0 50000000 20 mtd 5000 t0j0/doped/1.48 &
-# srun --exclusive -n 1 ./a.out 36 9 0 0 50000000 20 mtd 5000 t0j0/doped/1.48 &
-# srun --exclusive -n 1 ./a.out 48 16 0 0 50000000 20 mtd 5000 t0j0/doped/1.48 &
-# srun --exclusive -n 1 ./a.out 60 25 0 0 50000000 20 mtd 5000 t0j0/doped/1.48 &
-# srun --exclusive -n 1 ./a.out 72 36 0 0 50000000 20 mtd 5000 t0j0/doped/1.48 &
-# srun --exclusive -n 1 ./a.out 84 49 0 0 50000000 20 mtd 5000 t0j0/doped/1.48 &
-# srun --exclusive -n 1 ./a.out 96 64 0 0 50000000 20 mtd 5000 t0j0/doped/1.48 &
-# srun --exclusive -n 1 ./a.out 108 81 0 0 50000000 20 mtd 5000 t0j0/doped/1.48 &
-# srun --exclusive -n 1 ./a.out 120 100 0 0 50000000 20 mtd 5000 t0j0/doped/1.48 &
+# srun --exclusive -n 1 ./pocket 12 1 -0.3 0.06 20000000 20 etcmd 10000 finite-t/j-0.3t0.06 &
+# srun --exclusive -n 1 ./pocket 24 1 -0.3 0.06 20000000 20 etcmd 10000 finite-t/j-0.3t0.06 &
+# srun --exclusive -n 1 ./pocket 36 1 -0.3 0.06 20000000 20 etcmd 10000 finite-t/j-0.3t0.06 &
+# srun --exclusive -n 1 ./pocket 48 1 -0.3 0.06 20000000 20 etcmd 10000 finite-t/j-0.3t0.06 &
+# srun --exclusive -n 1 ./pocket 60 1 -0.3 0.06 20000000 20 etcmd 10000 finite-t/j-0.3t0.06 &
+# srun --exclusive -n 1 ./pocket 12 1 -0.3 0.08 20000000 20 etcmd 10000 finite-t/j-0.3t0.08 &
+# srun --exclusive -n 1 ./pocket 24 1 -0.3 0.08 20000000 20 etcmd 10000 finite-t/j-0.3t0.08 &
+# srun --exclusive -n 1 ./pocket 36 1 -0.3 0.08 20000000 20 etcmd 10000 finite-t/j-0.3t0.08 &
+# srun --exclusive -n 1 ./pocket 48 1 -0.3 0.08 20000000 20 etcmd 10000 finite-t/j-0.3t0.08 &
+# srun --exclusive -n 1 ./pocket 60 1 -0.3 0.08 20000000 20 etcmd 10000 finite-t/j-0.3t0.08 &
+# srun --exclusive -n 1 ./pocket 12 1 0.05 0.1 20000000 20 etcmd 10000 finite-t/j0.05t0.1 &
+# srun --exclusive -n 1 ./pocket 24 1 0.05 0.1 20000000 20 etcmd 10000 finite-t/j0.05t0.1 &
+# srun --exclusive -n 1 ./pocket 36 1 0.05 0.1 20000000 20 etcmd 10000 finite-t/j0.05t0.1 &
+# srun --exclusive -n 1 ./pocket 48 1 0.05 0.1 20000000 20 etcmd 10000 finite-t/j0.05t0.1 &
+# srun --exclusive -n 1 ./pocket 60 1 0.05 0.1 20000000 20 etcmd 10000 finite-t/j0.05t0.1 &
+# srun --exclusive -n 1 ./pocket 12 1 0.05 0.15 20000000 20 etcmd 10000 finite-t/j0.05t0.15 &
+# srun --exclusive -n 1 ./pocket 24 1 0.05 0.15 20000000 20 etcmd 10000 finite-t/j0.05t0.15 &
+# srun --exclusive -n 1 ./pocket 36 1 0.05 0.15 20000000 20 etcmd 10000 finite-t/j0.05t0.15 &
+# srun --exclusive -n 1 ./pocket 48 1 0.05 0.15 20000000 20 etcmd 10000 finite-t/j0.05t0.15 &
+# srun --exclusive -n 1 ./pocket 60 1 0.05 0.15 20000000 20 etcmd 10000 finite-t/j0.05t0.15 &
+# srun --exclusive -n 1 ./pocket 12 1 0.0 0.1 20000000 20 etcmd 10000 finite-t/j0t0.1 &
+# srun --exclusive -n 1 ./pocket 24 1 0.0 0.1 20000000 20 etcmd 10000 finite-t/j0t0.1 &
+# srun --exclusive -n 1 ./pocket 36 1 0.0 0.1 20000000 20 etcmd 10000 finite-t/j0t0.1 &
+# srun --exclusive -n 1 ./pocket 48 1 0.0 0.1 20000000 20 etcmd 10000 finite-t/j0t0.1 &
+# srun --exclusive -n 1 ./pocket 60 1 0.0 0.1 20000000 20 etcmd 10000 finite-t/j0t0.1 &
+# srun --exclusive -n 1 ./pocket 12 1 0.0 0.15 20000000 20 etcmd 10000 finite-t/j0t0.15 &
+# srun --exclusive -n 1 ./pocket 24 1 0.0 0.15 20000000 20 etcmd 10000 finite-t/j0t0.15 &
+# srun --exclusive -n 1 ./pocket 36 1 0.0 0.15 20000000 20 etcmd 10000 finite-t/j0t0.15 &
+# srun --exclusive -n 1 ./pocket 48 1 0.0 0.15 20000000 20 etcmd 10000 finite-t/j0t0.15 &
+# srun --exclusive -n 1 ./pocket 60 1 0.0 0.15 20000000 20 etcmd 10000 finite-t/j0t0.15 &
 
-# srun --exclusive -n 1 ./a.out 108 1 0 0 50000000 20 mtd 5000 t0j0/doped/-1 &
-# srun --exclusive -n 1 ./a.out 120 1 0 0 50000000 20 mtd 5000 t0j0/doped/-1 &
-srun --exclusive -n 1 ./a.out 96 1 0 0 200000000 10 mtd 2000 t0j0/doped/-1 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.04 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.05 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.06 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.07 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.08 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.09 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.10 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.11 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.12 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.13 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.14 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 72 1 0 0.15 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.04 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.05 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.06 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.07 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.08 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.09 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.10 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.11 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.12 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.13 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.14 20000000 20 etcm 10000 finite-t/j0 &
+srun --exclusive -n 1 ./pocket 48 1 0 0.15 20000000 20 etcm 10000 finite-t/j0 &
 
-# srun --exclusive -n 1 ./a.out 24 1 0 0 50000000 20 mtd 5000 t0j0/doped/1.196 &
-# srun --exclusive -n 1 ./a.out 48 4 0 0 50000000 20 mtd 5000 t0j0/doped/1.196 &
-# srun --exclusive -n 1 ./a.out 72 9 0 0 50000000 20 mtd 5000 t0j0/doped/1.196 &
-# srun --exclusive -n 1 ./a.out 96 16 0 0 50000000 20 mtd 5000 t0j0/doped/1.196 &
-# srun --exclusive -n 1 ./a.out 120 25 0 0 50000000 20 mtd 5000 t0j0/doped/1.196 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.05 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.06 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.07 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.08 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.09 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.10 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.12 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.14 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.16 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.18 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.20 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.25 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.30 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.40 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.50 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.60 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.70 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 0.85 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 1.00 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 1.50 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 2.00 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 3.00 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 4.00 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 5.00 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 10.00 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 20.00 20000000 20 etc 10000 vsweeps/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 50.00 20000000 20 etc 10000 vsweeps/0 &
 
-# srun --exclusive -n 1 ./a.out 6 1 0 0 50000000 20 mtd 5000 t0j0/doped/1.12 &
-# srun --exclusive -n 1 ./a.out 12 4 0 0 50000000 20 mtd 5000 t0j0/doped/1.12 &
-# srun --exclusive -n 1 ./a.out 18 9 0 0 50000000 20 mtd 5000 t0j0/doped/1.12 &
-# srun --exclusive -n 1 ./a.out 24 16 0 0 50000000 20 mtd 5000 t0j0/doped/1.12 &
-# srun --exclusive -n 1 ./a.out 30 25 0 0 50000000 20 mtd 5000 t0j0/doped/1.12 &
-# srun --exclusive -n 1 ./a.out 36 36 0 0 50000000 20 mtd 5000 t0j0/doped/1.12 &
-# srun --exclusive -n 1 ./a.out 42 49 0 0 50000000 20 mtd 5000 t0j0/doped/1.12 &
-# srun --exclusive -n 1 ./a.out 48 64 0 0 50000000 20 mtd 5000 t0j0/doped/1.12 &
-# srun --exclusive -n 1 ./a.out 54 81 0 0 50000000 20 mtd 5000 t0j0/doped/1.12 &
-# srun --exclusive -n 1 ./a.out 60 100 0 0 50000000 20 mtd 5000 t0j0/doped/1.12 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.15 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.2 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.24 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.2425 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.245 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.246 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.2465 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.247 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.2475 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.248 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.2485 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.249 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.25 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.2525 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.255 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.2575 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.26 20000000 20 etc 10000 vsweeps/0.2 &
+# srun --exclusive -n 1 ./pocket 24 0 0.2 0.3 20000000 20 etc 10000 vsweeps/0.2 &
 
-# srun --exclusive -n 1 ./a.out 18 1 0 0 50000000 20 mtd 5000 t0j0/doped/1.108 &
-# srun --exclusive -n 1 ./a.out 36 4 0 0 50000000 20 mtd 5000 t0j0/doped/1.108 &
-# srun --exclusive -n 1 ./a.out 48 9 0 0 50000000 20 mtd 5000 t0j0/doped/1.108 &
-# srun --exclusive -n 1 ./a.out 72 16 0 0 50000000 20 mtd 5000 t0j0/doped/1.108 &
-# srun --exclusive -n 1 ./a.out 90 25 0 0 50000000 20 mtd 5000 t0j0/doped/1.108 &
-
-# srun --exclusive -n 1 ./a.out 12 1 0 0 50000000 20 mtd 5000 t0j0/doped/lin1.48 &
-# srun --exclusive -n 1 ./a.out 24 2 0 0 50000000 20 mtd 5000 t0j0/doped/lin1.48 &
-# srun --exclusive -n 1 ./a.out 36 3 0 0 50000000 20 mtd 5000 t0j0/doped/lin1.48 &
-# srun --exclusive -n 1 ./a.out 48 4 0 0 50000000 20 mtd 5000 t0j0/doped/lin1.48 &
-# srun --exclusive -n 1 ./a.out 60 5 0 0 50000000 20 mtd 5000 t0j0/doped/lin1.48 &
-# srun --exclusive -n 1 ./a.out 72 6 0 0 50000000 20 mtd 5000 t0j0/doped/lin1.48 &
-# srun --exclusive -n 1 ./a.out 84 7 0 0 50000000 20 mtd 5000 t0j0/doped/lin1.48 &
-# srun --exclusive -n 1 ./a.out 96 8 0 0 50000000 20 mtd 5000 t0j0/doped/lin1.48 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.2 20000000 20 etc 10000 vsweeps/0.3 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.23 20000000 20 etc 10000 vsweeps/0.3 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.26 20000000 20 etc 10000 vsweeps/0.3 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.265 20000000 20 etc 10000 vsweeps/0.3 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.27 20000000 20 etc 10000 vsweeps/0.3 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.275 20000000 20 etc 10000 vsweeps/0.3 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.28 20000000 20 etc 10000 vsweeps/0.3 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.285 20000000 20 etc 10000 vsweeps/0.3 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.29 20000000 20 etc 10000 vsweeps/0.3 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.295 20000000 20 etc 10000 vsweeps/0.3 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.3 20000000 20 etc 10000 vsweeps/0.3 &
+# srun --exclusive -n 1 ./pocket 24 0 0.3 0.4 20000000 20 etc 10000 vsweeps/0.3 &
 
 wait

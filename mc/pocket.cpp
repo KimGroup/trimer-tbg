@@ -30,10 +30,20 @@ void assert_fail() { exit(0); }
 	{                                                                                                                  \
 		std::cout << "test passed at " << __LINE__ << #x << std::endl;                                                 \
 	}
+#define TEST_ASSERT2(x, y)                                                                                             \
+	if (!(x))                                                                                                          \
+	{                                                                                                                  \
+		std::cout << "test failed at " << __LINE__ << #x << "; " << (y) << std::endl;                                  \
+	}                                                                                                                  \
+	else                                                                                                               \
+	{                                                                                                                  \
+		std::cout << "test passed at " << __LINE__ << #x << "; " << (y) << std::endl;                                  \
+	}
 
 #else
 #define ASSERT(x)
 #define TEST_ASSERT(x)
+#define TEST_ASSERT2(x, y)
 #endif
 
 int32_t pmod(int32_t a, int32_t b) { return (a % b + b) % b; }
@@ -48,7 +58,7 @@ struct MonomerPos
 	MonomerPos() : x(0), y(0) {}
 	MonomerPos(int32_t x, int32_t y) : x(x), y(y) {}
 
-	MonomerPos rotate(int8_t dir)
+	MonomerPos rotate(int dir)
 	{
 		switch (pmod(dir, 6))
 		{
@@ -69,7 +79,7 @@ struct MonomerPos
 	}
 
 	MonomerPos canonical(int32_t w, int32_t h) const { return MonomerPos(pmod(x, w), pmod(y, h)); }
-	MonomerPos center_at(MonomerPos pos, int32_t w, int32_t h)
+	MonomerPos center_at(MonomerPos pos, int32_t w, int32_t h) const
 	{
 		return MonomerPos(pmod(x - pos.x + w / 2, w) - w / 2, pmod(y - pos.y + h / 2, h) - h / 2);
 	}
@@ -98,6 +108,9 @@ struct Cluster
 		return Cluster{(uint8_t)(1 << (dx * 4 + dy * 2 + s))};
 	}
 
+	Cluster() {}
+	Cluster(uint8_t occupations) : occupations(occupations) {}
+
 	bool operator==(const Cluster& other) const { return occupations == other.occupations; }
 };
 
@@ -107,7 +120,7 @@ struct TrimerPos
 	int8_t s;
 
 	TrimerPos() : x(0), y(0), s(0) {}
-	TrimerPos(int32_t x, int32_t y, int8_t s) : x(x), y(y), s(s) {}
+	TrimerPos(int x, int y, int s) : x(x), y(y), s((int8_t)s) {}
 
 	MonomerPos mono_pos() const { return MonomerPos(x, y); }
 
@@ -149,7 +162,7 @@ struct TrimerPos
 		return r;
 	}
 
-	TrimerPos reflect(MonomerPos center, int8_t dir, int32_t w, int32_t h) const
+	TrimerPos reflect(MonomerPos center, int dir, int w, int h) const
 	{
 		auto p = center_at(center, w, h);
 		int32_t cx = center.x, cy = center.y;
@@ -236,7 +249,7 @@ template <typename T> struct Accumulator
 	int total = 0;
 
 	Accumulator() : interval(1) {}
-	Accumulator(int n, int interval) : mean(n), m2(n), interval(interval) {}
+	Accumulator(uint n, int interval) : mean(n), m2(n), interval(interval) {}
 
 	void record(const std::vector<T>& vals)
 	{
@@ -244,7 +257,7 @@ template <typename T> struct Accumulator
 
 		double inv_total = (1. / total);
 
-		for (size_t i = 0; i < vals.size(); i++)
+		for (uint i = 0; i < vals.size(); i++)
 		{
 			double delta = vals[i] - mean[i];
 			mean[i] += delta * inv_total;
@@ -274,6 +287,28 @@ template <typename T> struct Accumulator
 		total = 0;
 		std::fill(mean.begin(), mean.end(), 0);
 		std::fill(m2.begin(), m2.end(), 0);
+	}
+};
+
+template <typename T> struct MovingAverage
+{
+	std::vector<T> mean;
+	double t;
+
+	MovingAverage() {}
+
+	MovingAverage(int n, double t) : mean(n, 0. / 0.), t(t) {}
+
+	void record(const std::vector<T>& vals)
+	{
+		double decay = std::exp(-1 / t);
+		for (uint i = 0; i < mean.size(); i++)
+		{
+			if (mean[i] != mean[i])
+				mean[i] = vals[i];
+			else
+				mean[i] = mean[i] * decay + (1 - decay) * vals[i];
+		}
 	}
 };
 
@@ -330,7 +365,7 @@ struct Sample
 	{
 		vertex_occupations = std::vector<Cluster>(w * h);
 
-		for (size_t i = 0; i < trimer_occupations.size(); i++)
+		for (uint i = 0; i < trimer_occupations.size(); i++)
 		{
 			if (trimer_occupations[i])
 			{
@@ -388,7 +423,7 @@ struct Sample
 		int total = 0;
 		int found = 0;
 
-		for (size_t i = 0; i < trimer_occupations.size(); i++)
+		for (uint i = 0; i < trimer_occupations.size(); i++)
 		{
 			if (trimer_occupations[i])
 			{
@@ -414,71 +449,50 @@ struct Sample
 		return (double)found / total;
 	}
 
-	std::vector<MonomerPos> all_monomers() const
-	{
-		std::vector<MonomerPos> r;
-		for (int i = 0; i < w; i++)
-			for (int j = 0; j < h; j++)
-			{
-				if (vertex_occupations[MonomerPos(i, j).index(w)].occupations == 0)
-					r.emplace_back(i, j);
-			}
-
-		return r;
-	}
-
-	void record_dimer_monomer_correlations(Accumulator<double>& a) const
+	template <typename Rng>
+	void record_dimer_monomer_correlations(Accumulator<double>& a, Rng& rng, int max_dimers) const
 	{
 		std::vector<double> vals(w * h);
-		std::vector<MonomerPos> monos = all_monomers();
 
 		std::vector<std::pair<MonomerPos, int>> dimers;
-		std::vector<MonomerPos> disjoint_monos;
+		std::unordered_set<MonomerPos> isolated_monos;
 		std::unordered_set<MonomerPos> connected_monos;
 
-		for (size_t i = 0; i < monos.size(); i++)
+		const std::array<MonomerPos, 3> neighbors = {MonomerPos{1, 0}, {0, 1}, {-1, 1}};
+
+		for (uint i = 0; i < vertex_occupations.size(); i++)
 		{
-			bool found = false;
-			for (size_t j = i + 1; j < monos.size(); j++)
+			if (vertex_occupations[i].occupations != 0)
+				continue;
+
+			bool connected = false;
+			auto pos = MonomerPos::from_index(i, w);
+			for (int r = 0; r < 3; r++)
 			{
-				MonomerPos origin;
-				int rotation = -1;
-
-				const std::vector<int> dx = {1, 0, -1};
-				const std::vector<int> dy = {0, 1, 1};
-
-				for (int r = 0; r < 3; r++)
+				auto neighbor = (pos + neighbors[r]).canonical(w, h);
+				if (vertex_occupations[neighbor.index(w)].occupations == 0)
 				{
-					if (monos[i].x + dx[r] == monos[j].x && monos[i].y + dy[r] == monos[j].y)
-					{
-						origin = monos[i];
-						rotation = r;
-						break;
-					}
-					if (monos[j].x + dx[r] == monos[i].x && monos[j].y + dy[r] == monos[i].y)
-					{
-						origin = monos[j];
-						rotation = r;
-						break;
-					}
-				}
-
-				if (rotation >= 0)
-				{
-					dimers.emplace_back(origin, rotation);
-					found = true;
-					connected_monos.insert(monos[i]);
-					connected_monos.insert(monos[j]);
+					dimers.push_back(std::make_pair(pos, r));
+					isolated_monos.erase(neighbor);
+					connected_monos.insert(neighbor);
+					connected = true;
 				}
 			}
 
-			if (!found && !connected_monos.contains(monos[i]))
-				disjoint_monos.push_back(monos[i]);
+			if (connected)
+				connected_monos.insert(pos);
+			else if (!connected_monos.contains(pos))
+				isolated_monos.insert(pos);
 		}
 
-		for (auto& i : dimers)
-			for (auto& j : disjoint_monos)
-				vals[j.center_at(i.first, w, h).rotate(-i.second).canonical(w, h).index(w)]++;
+		std::shuffle(dimers.begin(), dimers.end(), rng);
+
+		for (uint i = 0; i < std::min((size_t)max_dimers, dimers.size()); i++)
+		{
+			auto dimer = dimers[i];
+			for (auto j : isolated_monos)
+				vals[j.center_at(dimer.first, w, h).rotate(-dimer.second).canonical(w, h).index(w)]++;
+		}
 
 		a.record(vals);
 	}
@@ -486,10 +500,10 @@ struct Sample
 	void record_trimer_correlations(Accumulator<double>& a) const
 	{
 		std::vector<double> vals(w * h * 2);
-		for (size_t i = 0; i < trimer_occupations.size(); i++)
+		for (uint i = 0; i < trimer_occupations.size(); i++)
 		{
 			if (trimer_occupations[i])
-				for (size_t j = i + 1; j < trimer_occupations.size(); j++)
+				for (uint j = i + 1; j < trimer_occupations.size(); j++)
 					if (trimer_occupations[j])
 					{
 						auto p1 = TrimerPos::from_index(i, w);
@@ -505,8 +519,6 @@ struct Sample
 		a.record(vals);
 	}
 
-	void record_order_parameters(Accumulator<double>& a) { a.record(std::vector<double>()); }
-
 	template <typename Rng>
 	void record_partial_trimer_correlations(Accumulator<double>& a, Rng& rng, double fraction) const
 	{
@@ -514,12 +526,12 @@ struct Sample
 		std::uniform_real_distribution<> uniform(0., 1.);
 
 		int seen = 0;
-		for (size_t i = 0; i < trimer_occupations.size(); i++)
+		for (uint i = 0; i < trimer_occupations.size(); i++)
 		{
 			if (trimer_occupations[i] && uniform(rng) <= fraction)
 			{
 				seen++;
-				for (size_t j = 0; j < trimer_occupations.size(); j++)
+				for (uint j = 0; j < trimer_occupations.size(); j++)
 					if (trimer_occupations[j])
 					{
 						if (j == i)
@@ -559,7 +571,7 @@ struct Sample
 				pos.push_back(MonomerPos::from_index(i, w));
 
 		std::shuffle(pos.begin(), pos.end(), rng);
-		size_t sample_count = std::min(pos.size(), (size_t)(fraction * pos.size()) + 1);
+		uint sample_count = (uint)std::min(pos.size(), (size_t)(fraction * (double)pos.size()) + 1);
 
 		for (uint i = 0; i < sample_count; i++)
 		{
@@ -600,7 +612,7 @@ struct Sample
 			}
 		}
 
-		double inv_count = 1. / pos.size();
+		double inv_count = 1. / (double)pos.size();
 		for (auto& x : vals)
 			x *= inv_count;
 
@@ -617,14 +629,14 @@ struct Sample
 		a.record(vals);
 	}
 
-	void record_energy(Accumulator<double>& a, double u, double j4)
+	void record_energy(Accumulator<double>& a, double j4_over_u)
 	{
 		std::vector<double> vals(3);
 		calculate_energy();
 
 		vals[0] = clusters_total;
 		vals[1] = j4_total;
-		vals[2] = clusters_total * u + j4_total * j4;
+		vals[2] = clusters_total + j4_total * j4_over_u;
 
 		a.record(vals);
 	}
@@ -637,9 +649,9 @@ struct Sample
 		TrimerPos seed(0, 0, 2);
 		while (seed.s == 2)
 		{
-			uint32_t candidate = rng() % trimer_occupations.size();
-			symc = MonomerPos(rng() % w, rng() % h);
-			syma = rng() % 6;
+			uint candidate = (uint)(rng() % trimer_occupations.size());
+			symc = MonomerPos((int)(rng() % w), (int)(rng() % h));
+			syma = (int)(rng() % 6);
 
 			if (trimer_occupations[candidate])
 			{
@@ -661,7 +673,7 @@ struct Sample
 		for (auto& [i, occ] : seed.get_clusters_wrel(w, h))
 		{
 			ASSERT((vertex_occupations[i.index(w)].occupations & occ.occupations) != 0)
-			vertex_occupations[i.index(w)].occupations &= ~occ.occupations;
+			vertex_occupations[i.index(w)].occupations &= (uint8_t)~occ.occupations;
 		}
 
 		while (_pocket.size() > 0)
@@ -738,7 +750,7 @@ struct Sample
 						for (auto& [cluster, rel] : pos.get_clusters_wrel(w, h))
 						{
 							ASSERT((vertex_occupations[cluster.index(w)].occupations & rel.occupations) != 0)
-							vertex_occupations[cluster.index(w)].occupations &= ~rel.occupations;
+							vertex_occupations[cluster.index(w)].occupations &= (uint8_t)~rel.occupations;
 						}
 					}
 			}
@@ -772,7 +784,7 @@ struct Sample
 		TrimerPos seed;
 		while (true)
 		{
-			uint32_t candidate = rng() % trimer_occupations.size();
+			uint candidate = (uint)(rng() % trimer_occupations.size());
 			if (trimer_occupations[candidate])
 			{
 				seed = TrimerPos::from_index(candidate, w);
@@ -783,7 +795,7 @@ struct Sample
 		TrimerPos dest;
 		while (true)
 		{
-			uint32_t candidate = rng() % trimer_occupations.size();
+			uint candidate = (uint)(rng() % trimer_occupations.size());
 			if (!trimer_occupations[candidate])
 			{
 				dest = TrimerPos::from_index(candidate, w);
@@ -808,7 +820,7 @@ struct Sample
 			// difference due to removing one
 			// (x-1)(x-2)/2 - x(x-1)/2 = 1 - x
 			dcluster += 1 - __builtin_popcount(popc);
-			popc &= ~rel.occupations;
+			popc &= (uint8_t)~rel.occupations;
 		}
 		for (const auto& [occ, rel] : dest.get_clusters_wrel(w, h))
 		{
@@ -849,8 +861,8 @@ struct Sample
 		std::fill(trimer_occupations.begin(), trimer_occupations.end(), false);
 		std::fill(vertex_occupations.begin(), vertex_occupations.end(), Cluster());
 
-		int orientation = rng() % 3;
-		int phase = rng() % 3;
+		int orientation = (int)(rng() % 3);
+		int phase = (int)(rng() % 3);
 
 		std::vector<int> phase_conf;
 		phase_conf.push_back(phase);
@@ -885,7 +897,7 @@ struct Sample
 		int n = 0;
 		for (int row = 0; row < h / 2; row++)
 		{
-			uint offset = phase_conf[row] + row + 3 * (rng() % w);
+			uint offset = phase_conf[row] + row + 3 * (int)(rng() % w);
 
 			for (int col = 0; col < 2 * w / 3; col++)
 			{
@@ -929,6 +941,39 @@ struct Sample
 		}
 	}
 
+	template <typename Rng> void load_from(std::string file, Rng& rng)
+	{
+		std::fill(trimer_occupations.begin(), trimer_occupations.end(), false);
+		std::fill(vertex_occupations.begin(), vertex_occupations.end(), Cluster());
+
+		std::ifstream ifs(file);
+		std::string line;
+		int target = (int)(rng() % 150) + 200;
+		int lc = 0;
+		while (std::getline(ifs, line))
+		{
+			if (lc++ == target)
+			{
+				std::istringstream ss(line);
+				std::string token;
+
+				while (std::getline(ss, token, ' '))
+				{
+					std::istringstream ss2(token);
+					std::string token2;
+					std::vector<int> nums;
+					while (std::getline(ss2, token2, ','))
+						nums.push_back(std::stoi(token2));
+
+					auto pos = TrimerPos(nums[0], nums[1], nums[2]);
+					trimer_occupations[pos.index(w)] = true;
+					for (auto& [npos, rel] : pos.get_clusters_wrel(w, h))
+						vertex_occupations[npos.index(w)].occupations |= rel.occupations;
+				}
+			}
+		}
+	}
+
 	template <typename Rng> void reconfigure_root3(Rng& rng, int vacancies = 0)
 	{
 		if (w != h || w % 6)
@@ -937,7 +982,7 @@ struct Sample
 		std::fill(trimer_occupations.begin(), trimer_occupations.end(), false);
 		std::fill(vertex_occupations.begin(), vertex_occupations.end(), Cluster());
 
-		int offset = rng() % 6;
+		int offset = (int)(rng() % 6);
 
 		int n = 0;
 		for (int i = 0; i < w; i += 3)
@@ -959,51 +1004,54 @@ const std::array<std::array<MonomerPos, 6>, 2> Sample::j4_neighbor_list = {
 
 struct Options
 {
-	int length;
-	int mono_vacancies;
+	int domain_length;
+	int mono_vacancies = 0;
 
-	bool out_monomono;
-	bool out_clustercount;
-	bool out_monodi;
-	bool out_tritri;
-	bool out_energy;
-	bool out_positions;
-	bool out_order;
+	bool out_monomono = false;
+	bool out_clustercount = false;
+	bool out_monodi = false;
+	bool out_tritri = false;
+	bool out_energy = false;
+	bool out_energy2 = false;
 
-	bool idealbrickwall;
-	bool idealrt3;
-	bool metropolis;
+	bool idealbrickwall = false;
+	bool idealrt3 = false;
+	bool metropolis = false;
+	bool init_random = false;
 
-	int total_steps;
-	int decorr_interval;
-	int accumulator_interval;
+	int position_interval = 50000;
+	int total_steps = 0;
+	int decorr_interval = 0;
+	int accumulator_interval = 0;
 	int swap_interval = 10;
+	int adaptation_interval = 500;
+	int adaptation_duration = 1000000;
 
-	double j4_over_u;
+	double j4_over_u = 0;
 	std::vector<double> temperatures;
+	bool adaptive_pt = false;
 
 	std::string directory;
 };
 
 struct PTWorker
 {
-	const Options& options;
+	const Options options;
 
 	double temperature;
 	Sample sample;
 	std::minstd_rand rng;
 
+	bool io_initialized = false;
 	std::ofstream ofmonomono;
 	std::ofstream ofclustercount;
 	std::ofstream ofmonodi;
 	std::ofstream oftritri;
 	std::ofstream ofenergy;
+	std::ofstream ofenergy2;
 	std::ofstream ofconf;
-	std::ofstream oforder;
-	std::ofstream ofinfo;
 
 	Accumulator<double> amonomono;
-	Accumulator<double> aorder;
 	Accumulator<double> aclustercount;
 	Accumulator<double> amonodi;
 	Accumulator<double> atritri;
@@ -1012,51 +1060,74 @@ struct PTWorker
 	Accumulator<double> timing;
 
 	int total_steps = 0;
+	int previous_position_output = 0;
 
-	PTWorker(const Options& opt, double temperature)
-		: options(opt), temperature(temperature), sample(opt.length, opt.length), timing(3, 1)
+	PTWorker() : options(Options()) {}
+
+	PTWorker(const Options opt, double temperature, bool output)
+		: options(opt), temperature(temperature), sample(opt.domain_length, opt.domain_length), timing(2, 1)
 	{
 		rng.seed(
 			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
 				.count());
 
-		if (opt.j4_over_u < 0)
-			sample.reconfigure_brick_wall(rng, opt.mono_vacancies / 3);
-		else
-			sample.reconfigure_root3(rng, opt.mono_vacancies / 3);
-
-		std::filesystem::path basepath;
-		int runid = 0;
-		do
+		if (opt.init_random)
 		{
-			std::stringstream ss;
-			ss << options.length << "x" << options.length << "_r-" << options.mono_vacancies << "_t" << std::fixed
-			   << std::setprecision(6) << temperature << "_j" << std::setprecision(3) << options.j4_over_u << "_"
-			   << options.total_steps << "." << options.decorr_interval << "_" << runid++;
-			basepath = std::filesystem::path("data") / options.directory / ss.str();
-		} while (std::filesystem::exists(basepath));
-		std::filesystem::create_directories(basepath);
-		std::cout << "saving to " << basepath << std::endl;
+			std::ostringstream ss;
+			ss << "new-data/disordered/" << opt.domain_length << "x" << opt.domain_length
+			   << "_r-0_t0.000000_j0.000_20000000.200_0/positions.dat";
+			sample.load_from(ss.str(), rng);
+		}
+		else
+		{
+			if (opt.j4_over_u < 0)
+				sample.reconfigure_brick_wall(rng, opt.mono_vacancies / 3);
+			else
+				sample.reconfigure_root3(rng, opt.mono_vacancies / 3);
+		}
 
-		ofmonomono = std::ofstream(basepath / "mono-mono.dat");
-		ofclustercount = std::ofstream(basepath / "cluster-count.dat");
-		ofmonodi = std::ofstream(basepath / "mono-di.dat");
-		oftritri = std::ofstream(basepath / "tri-tri.dat");
-		ofenergy = std::ofstream(basepath / "energy.dat");
-		ofconf = std::ofstream(basepath / "positions.dat");
-		oforder = std::ofstream(basepath / "order.dat");
-		ofinfo = std::ofstream(basepath / "info.dat");
+		if (output)
+			enable_io();
+	}
 
-		ofinfo
-			<< "The order parameters are: |n(M)|, |n(M)|^2, |n(M)|^4, |n(K)|, |n(K)|^2, |n(K)|^4, A-B, |A-B|^2, |A-B|^4"
-			<< std::endl;
+	void enable_io()
+	{
+		if (!io_initialized)
+		{
+			io_initialized = true;
+			if (options.directory.empty())
+				return;
 
-		amonomono = Accumulator<double>(options.length * options.length, options.accumulator_interval);
-		aorder = Accumulator<double>(9, options.accumulator_interval);
-		aclustercount = Accumulator<double>(7, options.accumulator_interval);
-		amonodi = Accumulator<double>(options.length * options.length, options.accumulator_interval);
-		atritri = Accumulator<double>(options.length * options.length * 2, options.accumulator_interval);
-		aenergy = Accumulator<double>(3, options.accumulator_interval);
+			std::filesystem::path basepath;
+			int runid = 0;
+			do
+			{
+				std::stringstream ss;
+				ss << options.domain_length << "x" << options.domain_length << "_r-" << options.mono_vacancies << "_t"
+				   << std::fixed << std::setprecision(6) << temperature << "_j" << std::setprecision(3)
+				   << options.j4_over_u << "_" << options.total_steps << "." << options.decorr_interval << "_"
+				   << runid++;
+				basepath = std::filesystem::path("new-data") / options.directory / ss.str();
+			} while (std::filesystem::exists(basepath));
+			std::filesystem::create_directories(basepath);
+			std::cout << "saving to " << basepath << std::endl;
+
+			ofmonomono = std::ofstream(basepath / "mono-mono.dat");
+			ofclustercount = std::ofstream(basepath / "cluster-count.dat");
+			ofmonodi = std::ofstream(basepath / "mono-di.dat");
+			oftritri = std::ofstream(basepath / "tri-tri.dat");
+			ofenergy = std::ofstream(basepath / "energy.dat");
+			ofenergy2 = std::ofstream(basepath / "energy-single.dat");
+			ofconf = std::ofstream(basepath / "positions.dat");
+
+			amonomono =
+				Accumulator<double>(options.domain_length * options.domain_length, options.accumulator_interval);
+			aclustercount = Accumulator<double>(7, options.accumulator_interval);
+			amonodi = Accumulator<double>(options.domain_length * options.domain_length, options.accumulator_interval);
+			atritri =
+				Accumulator<double>(options.domain_length * options.domain_length * 2, options.accumulator_interval);
+			aenergy = Accumulator<double>(3, options.accumulator_interval);
+		}
 	}
 
 	void step()
@@ -1075,8 +1146,10 @@ struct PTWorker
 				sample.reconfigure_root3(rng);
 			else if (options.metropolis)
 			{
+				sample.calculate_energy();
 				Sample copy = sample;
 				copy.metropolis_move(rng);
+				copy.calculate_energy();
 
 				double d_energy =
 					(copy.j4_total - sample.j4_total) * j4 + (copy.clusters_total - sample.clusters_total) * u;
@@ -1087,144 +1160,245 @@ struct PTWorker
 				sample.pocket_move(rng, u, j4);
 		}
 
+		total_steps += options.decorr_interval;
+
 		auto end1 = std::chrono::high_resolution_clock::now();
+		sample.calculate_energy();
 
-		if (options.out_monomono)
-			sample.record_partial_monomer_correlations(amonomono, rng, 32. / (options.mono_vacancies));
-		if (options.out_clustercount)
-			sample.record_cluster_count(aclustercount);
-		if (options.out_monodi)
-			sample.record_dimer_monomer_correlations(amonodi);
-		if (options.out_tritri)
-			sample.record_partial_trimer_correlations(atritri, rng, 64. / (sample.w * sample.h / 3));
-		if (options.out_energy)
-			sample.record_energy(aenergy, 1, options.j4_over_u);
-		if (options.out_order)
-			sample.record_order_parameters(aorder);
+		std::vector<double> timings(2);
+		timings[0] = (double)std::chrono::duration_cast<std::chrono::microseconds>(end1 - begin).count();
 
-		auto end2 = std::chrono::high_resolution_clock::now();
-
-		amonomono.write(ofmonomono);
-		aclustercount.write(ofclustercount);
-		amonodi.write(ofmonodi);
-		atritri.write(oftritri);
-		aenergy.write(ofenergy);
-		aorder.write(oforder);
-
-		if (options.out_positions)
+		if (io_initialized)
 		{
-			for (size_t j = 0; j < sample.trimer_occupations.size(); j++)
-				if (sample.trimer_occupations[j])
-					ofconf << TrimerPos::from_index(j, sample.w) << " ";
-			ofconf << std::endl;
+			if (options.out_monomono)
+				sample.record_partial_monomer_correlations(amonomono, rng, 32. / (options.mono_vacancies));
+			if (options.out_clustercount)
+				sample.record_cluster_count(aclustercount);
+			if (options.out_monodi)
+				sample.record_dimer_monomer_correlations(amonodi, rng, 10);
+			if (options.out_tritri)
+				sample.record_partial_trimer_correlations(atritri, rng, 64. / (sample.w * sample.h / 3));
+			if (options.out_energy)
+				sample.record_energy(aenergy, options.j4_over_u);
+
+			auto end2 = std::chrono::high_resolution_clock::now();
+
+			amonomono.write(ofmonomono);
+			aclustercount.write(ofclustercount);
+			amonodi.write(ofmonodi);
+			atritri.write(oftritri);
+			aenergy.write(ofenergy);
+
+			if (total_steps > previous_position_output + options.position_interval)
+			{
+				for (uint j = 0; j < sample.trimer_occupations.size(); j++)
+					if (sample.trimer_occupations[j])
+						ofconf << TrimerPos::from_index(j, sample.w) << " ";
+				ofconf << std::endl;
+				previous_position_output = total_steps;
+			}
+			if (options.out_energy2)
+			{
+				ofenergy2 << sample.clusters_total << " " << sample.j4_total << std::endl;
+			}
+
+			timings[1] = (double)std::chrono::duration_cast<std::chrono::microseconds>(end2 - end1).count();
 		}
-
-		auto end3 = std::chrono::high_resolution_clock::now();
-
-		std::vector<double> timings(3);
-		timings[0] = std::chrono::duration_cast<std::chrono::microseconds>(end1 - begin).count();
-		timings[1] = std::chrono::duration_cast<std::chrono::microseconds>(end2 - end1).count();
-		timings[2] = std::chrono::duration_cast<std::chrono::microseconds>(end3 - end2).count();
 
 		timing.record(timings);
 	}
 
 	void final_output()
 	{
-		amonomono.write(ofmonomono, true);
-		aclustercount.write(ofclustercount, true);
-		amonodi.write(ofmonodi, true);
-		atritri.write(oftritri, true);
-		aenergy.write(ofenergy, true);
-		aorder.write(oforder, true);
+		if (io_initialized)
+		{
+			amonomono.write(ofmonomono, true);
+			aclustercount.write(ofclustercount, true);
+			amonodi.write(ofmonodi, true);
+			atritri.write(oftritri, true);
+			aenergy.write(ofenergy, true);
+		}
 	}
 };
 
+double lerp(double x, double a, double b) { return a + x * (b - a); }
+
 struct PTEnsemble
 {
-	const Options& options;
+	const Options options;
 
 	std::minstd_rand rng;
 	std::vector<PTWorker> chains;
-	int parity = 0;
+	int swap_count = 0;
 
 	Accumulator<double> timing;
 
-	PTEnsemble(const Options& options) : options(options), timing(2, 1)
+	Accumulator<double> acceptance_ratios;
+	MovingAverage<double> acceptance_ratios_ma;
+
+	PTEnsemble(const Options options) : options(options), timing(2, 1)
 	{
 		rng.seed(
 			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
 				.count());
 
-		for (auto& temp : options.temperatures)
-			chains.push_back(PTWorker(options, temp));
+		for (uint i = 0; i < options.temperatures.size(); i++)
+			chains.push_back(PTWorker(options, options.temperatures[i], !options.adaptive_pt));
+
+		acceptance_ratios = Accumulator<double>((uint)(chains.size() - 1), 1);
+		acceptance_ratios_ma = MovingAverage<double>((uint)(chains.size() - 1), 200);
 	}
 
 	int steps_done = 0;
 	int last_output = 0;
 
-	void step_all()
+	static void optimize_schedule(const Accumulator<double>& acceptance_ratios, std::vector<PTWorker>& chains)
 	{
+		// calculate communication barriers
+		std::vector<double> betas;
+		std::vector<double> lambdas;
+
+		for (uint i = 0; i < chains.size(); i++)
+		{
+			betas.push_back(1 / chains[i].temperature);
+			if (lambdas.empty())
+				lambdas.push_back(0);
+			else
+				lambdas.push_back(lambdas.back() + (1 - acceptance_ratios.mean[i - 1]));
+		}
+
+		int prev_range_begin = 0;
+		for (uint i = 1; i < chains.size() - 1; i++)
+		{
+			double target = lerp(i / ((double)chains.size() - 1), lambdas.front(), lambdas.back());
+
+			auto range_begin =
+				std::lower_bound(lambdas.begin() + prev_range_begin, lambdas.end(), target) - lambdas.begin() - 1;
+
+			double new_beta = lerp((target - lambdas[range_begin]) / (lambdas[range_begin + 1] - lambdas[range_begin]),
+								   betas[range_begin], betas[range_begin + 1]);
+
+			chains[i].temperature = 1 / new_beta;
+
+			prev_range_begin = (uint)range_begin;
+		}
+	}
+
+	void pt_swap()
+	{
+		if (chains.size() < 2)
+			return;
+
 		std::uniform_real_distribution<> uniform(0., 1.);
-		std::vector<std::thread> threads;
+		std::vector<double> acceptances(chains.size() - 1);
 
-		if (chains.size() > 1)
-		{
-			std::vector<double> timings(2);
-
-			auto begin = std::chrono::high_resolution_clock::now();
-
-			for (size_t i = 0; i < chains.size(); i++)
-				threads.push_back(std::thread([this, i] {
-					for (int j = 0; j < options.swap_interval; j++)
-						chains[i].step();
-				}));
-
-			auto end1 = std::chrono::high_resolution_clock::now();
-
-			for (auto& thread : threads)
-				thread.join();
-
-			auto end2 = std::chrono::high_resolution_clock::now();
-
-			timings[0] = std::chrono::duration_cast<std::chrono::microseconds>(end1 - begin).count();
-			timings[1] = std::chrono::duration_cast<std::chrono::microseconds>(end2 - end1).count();
-			timing.record(timings);
-		}
-		else
-		{
-			for (int i = 0; i < options.swap_interval; i++)
-				chains[0].step();
-		}
-
-		for (size_t i = parity++ % 2; i < chains.size() - 1; i += 2)
+		for (uint i = swap_count % 2; i < chains.size() - 1; i += 2)
 		{
 			chains[i].sample.calculate_energy();
 			chains[i + 1].sample.calculate_energy();
 
-			int u_factor = chains[i].sample.clusters_total - chains[i + 1].sample.clusters_total;
-			int j4_factor = (chains[i].sample.j4_total - chains[i + 1].sample.j4_total) * options.j4_over_u;
+			double u_factor = chains[i].sample.clusters_total - chains[i + 1].sample.clusters_total;
+			double j4_factor = (chains[i].sample.j4_total - chains[i + 1].sample.j4_total) * options.j4_over_u;
 
-			double action = (1 / chains[i + 1].temperature - 1 / chains[i].temperature) * (u_factor + j4_factor);
+			double action;
+			if (u_factor + j4_factor == 0)
+				action = 0;
+			else
+				action = (1 / chains[i + 1].temperature - 1 / chains[i].temperature) * (u_factor + j4_factor);
 
-			if (uniform(rng) < std::exp(-action))
+			double accept = std::exp(-action);
+			acceptances[i] += std::min(1., accept);
+
+			if (uniform(rng) < accept)
 				std::swap(chains[i].sample, chains[i + 1].sample);
 		}
+		swap_count++;
+		acceptance_ratios.record(acceptances);
+		acceptance_ratios_ma.record(acceptances);
 
-		steps_done += options.decorr_interval;
+		if (options.adaptive_pt && steps_done < options.adaptation_duration &&
+			acceptance_ratios.total >= options.adaptation_interval)
+		{
+			// std::vector<double> new_temps;
+			// for (uint i = 1; i < chains.size() - 1; i++)
+			// {
+			// 	double adjustment_factor =
+			// 		std::tanh(std::log(acceptance_ratios.mean[i] / acceptance_ratios.mean[i - 1]));
 
-		if (steps_done >= last_output + 2500)
+			// 	if (adjustment_factor > 0)
+			// 		new_temps.push_back(chains[i].temperature -
+			// 							speed * adjustment_factor *
+			// 								(chains[i].temperature - chains[i - 1].temperature));
+			// 	else
+			// 		new_temps.push_back(chains[i].temperature -
+			// 							speed * adjustment_factor *
+			// 								(chains[i + 1].temperature - chains[i].temperature));
+			// }
+
+			optimize_schedule(acceptance_ratios, chains);
+			acceptance_ratios.reset();
+		}
+
+		if (steps_done >= options.adaptation_duration)
+		{
+			for (auto& chain : chains)
+				chain.enable_io();
+		}
+	}
+
+	void step_all()
+	{
+		std::vector<double> timings(2);
+
+		if (chains.size() > 1)
+		{
+			std::vector<std::thread> threads;
+
+			auto begin = std::chrono::high_resolution_clock::now();
+			for (uint i = 0; i < chains.size(); i++)
+				threads.push_back(std::thread([this, i] {
+					for (int j = 0; j < options.swap_interval; j++)
+						chains[i].step();
+				}));
+			auto end1 = std::chrono::high_resolution_clock::now();
+
+			for (auto& thread : threads)
+				thread.join();
+			auto end2 = std::chrono::high_resolution_clock::now();
+
+			timings[0] = (double)std::chrono::duration_cast<std::chrono::microseconds>(end1 - begin).count();
+			timings[1] = (double)std::chrono::duration_cast<std::chrono::microseconds>(end2 - end1).count();
+		}
+		else
+		{
+			auto begin = std::chrono::high_resolution_clock::now();
+			for (int i = 0; i < options.swap_interval; i++)
+				chains[0].step();
+			auto end = std::chrono::high_resolution_clock::now();
+
+			timings[1] = (double)std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
+		}
+
+		steps_done += options.decorr_interval * options.swap_interval;
+
+		if (chains.size() > 1)
+			pt_swap();
+
+		timing.record(timings);
+		if (steps_done >= last_output + 5000)
 		{
 			last_output = steps_done;
 
-			std::cout << "Step " << steps_done << " of " << options.total_steps << std::endl;
-			std::cout << "Master " << timing.mean[0] << " " << timing.mean[1] << std::endl;
+			std::cout << std::fixed << "Step " << steps_done << " of " << options.total_steps << "; Spawn "
+					  << timing.mean[0] << "; Join " << timing.mean[1] << std::endl;
 			timing.reset();
 
-			for (auto& chain : chains)
+			for (uint i = 0; i < chains.size(); i++)
 			{
-				std::cout << "Thread" << chain.temperature << " " << chain.timing.mean[0] << " " << chain.timing.mean[1]
-						  << " " << chain.timing.mean[2] << std::endl;
+				auto& chain = chains[i];
+				std::cout << "Thread " << chain.temperature << "; Ratio (up) "
+						  << (i == chains.size() - 1 ? 0 : acceptance_ratios_ma.mean[i]) << "; Step "
+						  << chain.timing.mean[0] << "; Measure " << chain.timing.mean[1] << std::endl;
 				chain.timing.reset();
 			}
 		}
@@ -1240,18 +1414,38 @@ struct PTEnsemble
 void sim(int argc, char** argv)
 {
 	if (argc < 10)
+	{
+		std::cout << "no arguments" << std::endl;
 		exit(-1);
+	}
 
 	Options options;
-	options.length = std::stoi(std::string(argv[1]));
+	options.domain_length = std::stoi(std::string(argv[1]));
 	options.mono_vacancies = std::stoi(std::string(argv[2])) * 3;
 	options.j4_over_u = std::stod(std::string(argv[3]));
 
 	std::string temperatures = std::string(argv[4]);
 	std::istringstream ss(temperatures);
-	std::string token;
-	while (std::getline(ss, token, ','))
-		options.temperatures.push_back(std::stod(token));
+
+	if (temperatures.find(',') != std::string::npos)
+	{
+		std::string token;
+		while (std::getline(ss, token, ','))
+			options.temperatures.push_back(std::stod(token));
+	}
+	else
+	{
+		std::string token;
+		std::getline(ss, token, ':');
+		double begin = std::stod(token);
+		std::getline(ss, token, ':');
+		int count = std::stoi(token);
+		std::getline(ss, token, ':');
+		double end = std::stod(token);
+
+		for (int i = 0; i < count; i++)
+			options.temperatures.push_back(lerp(i / (double)(count - 1), begin, end));
+	}
 
 	options.total_steps = std::stoi(std::string(argv[5]));
 	options.decorr_interval = std::stoi(std::string(argv[6]));
@@ -1266,11 +1460,13 @@ void sim(int argc, char** argv)
 	options.out_monodi = optstring.find('d') != std::string::npos;
 	options.out_tritri = optstring.find('t') != std::string::npos;
 	options.out_energy = optstring.find('e') != std::string::npos;
-	options.out_positions = optstring.find('p') != std::string::npos;
-	options.out_order = optstring.find('o') != std::string::npos;
+	options.out_energy2 = optstring.find('E') != std::string::npos;
+
 	options.idealbrickwall = optstring.find('B') != std::string::npos;
 	options.idealrt3 = optstring.find('3') != std::string::npos;
 	options.metropolis = optstring.find('M') != std::string::npos;
+	options.adaptive_pt = optstring.find('A') != std::string::npos;
+	options.init_random = optstring.find('R') != std::string::npos;
 
 	PTEnsemble ensemble(options);
 	while (ensemble.steps_done < options.total_steps)
@@ -1278,4 +1474,27 @@ void sim(int argc, char** argv)
 	ensemble.final_output();
 }
 
+void test_optimizer()
+{
+	std::vector<PTWorker> chains(3);
+	chains[0].temperature = 1;
+	chains[1].temperature = 2;
+	chains[2].temperature = 3;
+
+	Accumulator<double> acceptance_ratios(2, 1);
+	acceptance_ratios.mean = std::vector<double>{0.5, 0};
+
+	PTEnsemble::optimize_schedule(acceptance_ratios, chains);
+
+	// betas = [1, 0.5, 0.33]
+	// communication barriers = [0, 0.5, 1.5]
+	// optimized betas = [1, 0.4583, 0.33]
+	// optimized temperatures = [1, 2.1815, 3]
+	TEST_ASSERT2(std::abs(chains[1].temperature - 2.1815) < 1e-2, chains[1].temperature)
+}
+
+#ifndef TEST
 int main(int argc, char** argv) { sim(argc, argv); }
+#else
+int main() { test_optimizer(); }
+#endif
