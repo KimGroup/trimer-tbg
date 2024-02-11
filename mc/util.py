@@ -68,37 +68,36 @@ def enum_files(dir):
     for fname in glob.glob(dir):
         basename = fname.split("/")[-2]
         tokens = basename.split("_")
-        yield fname, { "l": int(tokens[0].split("x")[0]), "r": int(tokens[1][1:]), "t": float(tokens[2][1:]), "j4": float(tokens[3][1:]) }
+        yield { "fname": fname, "l": int(tokens[0].split("x")[0]), "r": int(tokens[1][1:]), "t": float(tokens[2][1:]), "j4": float(tokens[3][1:]) }
 
 def get_all_data(glob, transform, filter=lambda _: True, skip=0, by="t", with_counts=False, take=None):
     ts0, ds0, ns = [], [], []
-    for fname, props in sorted(enum_files(glob), key=lambda x: x[1][by]):
+    for props in sorted(enum_files(glob), key=lambda x: x[by]):
         if not filter(props): continue
-        ts0.append(props[by])
-        data = read_accumulator(fname, skip=skip, take=take)
+        ts0.append(props if by == "fname" else props[by])
+        data = read_accumulator(props["fname"], skip=skip, take=take)
         ds0.append(transform(data, props))
         ns.append(data[2])
 
+    ts0 = np.array(ts0)
+    
+    try:
+        ds0 = np.array(ds0)
+    except ValueError:
+        ds0 = np.array(ds0, dtype=object)
+
     if with_counts:
-        try:
-            ts0, ds0, n0 = np.array(ts0), np.array(ds0), np.array(ns)
-            return ts0, ds0, n0
-        except ValueError:
-            return np.array(ts0), ds0, np.array(ns)
+        return ts0, ds0, np.array(ns)
     else:
-        try:
-            ts0, ds0 = np.array(ts0), np.array(ds0)
-            return ts0, ds0
-        except ValueError:
-            return np.array(ts0), ds0
+        return ts0, ds0
 
-def get_all_energies(glob, skip=0, take=None):
-    return get_all_data(glob, lambda data, props: data[0][2]/props["l"]**2*3, skip=skip, take=take)
+def get_all_energies(glob, skip=0, take=None, by="t"):
+    return get_all_data(glob, lambda data, props: data[0][2]/props["l"]**2*3, skip=skip, take=take, by=by)
 
-def get_all_cvs(glob, skip=0, take=None):
+def get_all_cvs(glob, skip=0, take=None, by="t"):
     return get_all_data(glob, lambda data, props:
                         np.zeros_like(data[1][2]) if props["t"] == 0 else
-                        data[1][2]**2/props["t"]**2/(props["l"]**2/3 - props["r"]/3), skip=skip, take=take)
+                        data[1][2]**2/props["t"]**2/(props["l"]**2/3 - props["r"]/3), skip=skip, take=take, by=by)
 
 def autocorr(vals, label=None):
     vals = np.array(vals)

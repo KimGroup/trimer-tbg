@@ -3,6 +3,7 @@
 #include <complex>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <random>
@@ -211,6 +212,14 @@ struct TrimerPos
 	bool operator==(const TrimerPos& other) const { return x == other.x && y == other.y && s == other.s; }
 };
 
+struct InteractionCount
+{
+	int u = 0;
+	int j4 = 0;
+
+	bool operator==(const InteractionCount& other) const { return j4 == other.j4 && u == other.u; }
+};
+
 namespace std
 {
 template <> struct hash<MonomerPos>
@@ -229,6 +238,15 @@ template <> struct hash<TrimerPos>
 		std::size_t seed = std::hash<int32_t>()(x.x);
 		seed ^= std::hash<int32_t>()(x.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 		seed ^= std::hash<int32_t>()(x.s) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		return seed;
+	}
+};
+template <> struct hash<InteractionCount>
+{
+	std::size_t operator()(const InteractionCount& x) const
+	{
+		std::size_t seed = std::hash<int32_t>()(x.u);
+		seed ^= std::hash<int32_t>()(x.j4) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 		return seed;
 	}
 };
@@ -312,18 +330,50 @@ template <typename T> struct MovingAverage
 	}
 };
 
+struct Options
+{
+	int domain_length;
+	int mono_vacancies = 0;
+
+	bool out_monomono = false;
+	bool out_clustercount = false;
+	bool out_monodi = false;
+	bool out_tritri = false;
+	bool out_energy = false;
+	bool out_energy2 = false;
+
+	bool idealbrickwall = false;
+	bool idealrt3 = false;
+	bool metropolis = false;
+	bool init_random = false;
+
+	bool multicanonical = false;
+	int multicanonical_rounds = 1;
+	int multicanonical_round_length = 100000;
+	double multicanonical_factor_decay = 0.8;
+	double multicanonical_init_factor = 0.2;
+
+	int position_interval = 50000;
+	int total_steps = 0;
+	int decorr_interval = 0;
+	int accumulator_interval = 0;
+	int swap_interval = 10;
+	int adaptation_interval = 500;
+	int adaptation_duration = 1000000;
+
+	double j4_over_u = 0;
+	std::vector<double> temperatures;
+	bool adaptive_pt = false;
+
+	std::string directory;
+};
+
 struct Sample
 {
-	struct PairInteraction
-	{
-		int j4 = 0;
-		int u = 0;
-	};
-
   private:
 	std::vector<TrimerPos> _pocket, _Abar;
 	std::vector<std::pair<MonomerPos, Cluster>> _Abar_entries;
-	std::unordered_map<TrimerPos, PairInteraction> _candidates;
+	std::unordered_map<TrimerPos, InteractionCount> _candidates;
 	std::unordered_map<TrimerPos, std::vector<complex>> _trimer_contributions;
 
   public:
@@ -359,6 +409,24 @@ struct Sample
 
 		regenerate_occupation();
 		calculate_energy();
+	}
+
+	template <typename Rng> void initialize(const Options& opt, Rng& rng)
+	{
+		if (opt.init_random)
+		{
+			std::ostringstream ss;
+			ss << "new-data/disordered/" << opt.domain_length << "x" << opt.domain_length
+			   << "_r-0_t0.000000_j0.000_20000000.200_0/positions.dat";
+			load_from(ss.str(), rng);
+		}
+		else
+		{
+			if (opt.j4_over_u < 0)
+				reconfigure_brick_wall(rng, opt.mono_vacancies / 3);
+			else
+				reconfigure_root3(rng, opt.mono_vacancies / 3);
+		}
 	}
 
 	void regenerate_occupation()
@@ -641,8 +709,21 @@ struct Sample
 		a.record(vals);
 	}
 
-	template <typename Rng> void pocket_move(Rng& rng, double u, double j4)
+	using Cascader = std::function<double(const InteractionCount&, double, double)>;
+	static Cascader boltzmann_cascader()
 	{
+		return [](const InteractionCount& interactions, double u, double j4) {
+			double u_factor = interactions.u != 0 ? u * interactions.u : 0;
+			double j4_factor = interactions.j4 != 0 ? j4 * interactions.j4 : 0;
+
+			return 1 - std::exp(-(u_factor + j4_factor));
+		};
+	}
+
+	template <typename Rng> void pocket_move(Rng& rng, double u, double j4, Cascader cascader)
+	{
+		calculate_energy();
+
 		MonomerPos symc;
 		int syma;
 
@@ -692,7 +773,8 @@ struct Sample
 				_Abar_entries.push_back(std::make_pair(i, rel));
 				auto target_occ = vertex_occupations[i.index(w)].occupations;
 
-				if (target_occ > 0 && u != 0 && u > -infinity)
+				if (target_occ > 0 && u != 0)
+				{
 					for (int dx = -1; dx <= 0; dx++)
 						for (int dy = -1; dy <= 0; dy++)
 							for (int s = 0; s < 2; s++)
@@ -701,6 +783,7 @@ struct Sample
 									auto overlap = TrimerPos(i.x + dx, i.y + dy, s).canonical(w, h);
 									_candidates[overlap].u++;
 								}
+				}
 			}
 
 			// add source overlaps to candidates
@@ -709,15 +792,17 @@ struct Sample
 				{
 					auto orig_occ = vertex_occupations[i.index(w)].occupations;
 
-					if (orig_occ > 0)
-						for (int dx = -1; dx <= 0; dx++)
-							for (int dy = -1; dy <= 0; dy++)
-								for (int s = 0; s < 2; s++)
-									if ((orig_occ & Cluster::relative(dx, dy, s).occupations) != 0)
-									{
-										auto overlap = TrimerPos(i.x + dx, i.y + dy, s).canonical(w, h);
-										_candidates[overlap].u--;
-									}
+#if DTEST
+					ASSERT(orig_occ != 0)
+#endif
+					for (int dx = -1; dx <= 0; dx++)
+						for (int dy = -1; dy <= 0; dy++)
+							for (int s = 0; s < 2; s++)
+								if ((orig_occ & Cluster::relative(dx, dy, s).occupations) != 0)
+								{
+									auto overlap = TrimerPos(i.x + dx, i.y + dy, s).canonical(w, h);
+									_candidates[overlap].u--;
+								}
 				}
 
 			if (j4 != 0)
@@ -739,10 +824,11 @@ struct Sample
 
 			for (auto& [pos, interactions] : _candidates)
 			{
-				double u_factor = interactions.u != 0 ? u * interactions.u : 0;
-				double j4_factor = interactions.j4 != 0 ? j4 * interactions.j4 : 0;
+				double p_cascade = cascader(interactions, u, j4);
+				std::cout << interactions.j4 << " " << interactions.u << std::endl;
 
-				if (u_factor + j4_factor == infinity || uniform(rng) < 1 - std::exp(-(u_factor + j4_factor)))
+				if (p_cascade > 0 && (p_cascade >= 1 || uniform(rng) < p_cascade))
+				{
 					if (trimer_occupations[pos.reflect(symc, syma, w, h).index(w)] == false)
 					{
 						_pocket.push_back(pos);
@@ -753,6 +839,7 @@ struct Sample
 							vertex_occupations[cluster.index(w)].occupations &= (uint8_t)~rel.occupations;
 						}
 					}
+				}
 			}
 		}
 
@@ -769,6 +856,15 @@ struct Sample
 		}
 
 #ifdef TEST
+		// int oldj4 = j4_total;
+		// int oldcluster = clusters_total;
+		// j4_total = -1;
+		// clusters_total = -1;
+		// calculate_energy();
+		// std::cout << j4_total << " " << oldj4 << " " << clusters_total << " " << oldcluster << std::endl;
+		// ASSERT(j4_total == oldj4)
+		// ASSERT(clusters_total == oldcluster)
+
 		auto occupations = vertex_occupations;
 		regenerate_occupation();
 		ASSERT(occupations == vertex_occupations)
@@ -827,8 +923,8 @@ struct Sample
 			auto& popc = vertex_occupations[occ.index(w)].occupations;
 			ASSERT((popc & rel.occupations) == 0);
 
-			// difference due to adding one one
-			// ((x+1)^2 - (x+1)) - (x^2 - x) = x
+			// difference due to adding one
+			// x(x+1)/2 - x(x-1)/2 = x
 			dcluster += __builtin_popcount(popc);
 			popc |= rel.occupations;
 		}
@@ -959,7 +1055,7 @@ struct Sample
 
 				while (std::getline(ss, token, ' '))
 				{
-					std::istringstream ss2(token);
+					std::istringstream ss2(token.substr(1, token.length() - 2));
 					std::string token2;
 					std::vector<int> nums;
 					while (std::getline(ss2, token2, ','))
@@ -1002,38 +1098,6 @@ const std::array<std::array<MonomerPos, 6>, 2> Sample::j4_neighbor_list = {
 	std::array<MonomerPos, 6>{MonomerPos{0, 1}, {1, 0}, {0, -2}, {1, -2}, {-2, 0}, {-2, 1}},
 	{MonomerPos{0, 2}, {-1, 2}, {2, 0}, {2, -1}, {0, -1}, {-1, 0}}};
 
-struct Options
-{
-	int domain_length;
-	int mono_vacancies = 0;
-
-	bool out_monomono = false;
-	bool out_clustercount = false;
-	bool out_monodi = false;
-	bool out_tritri = false;
-	bool out_energy = false;
-	bool out_energy2 = false;
-
-	bool idealbrickwall = false;
-	bool idealrt3 = false;
-	bool metropolis = false;
-	bool init_random = false;
-
-	int position_interval = 50000;
-	int total_steps = 0;
-	int decorr_interval = 0;
-	int accumulator_interval = 0;
-	int swap_interval = 10;
-	int adaptation_interval = 500;
-	int adaptation_duration = 1000000;
-
-	double j4_over_u = 0;
-	std::vector<double> temperatures;
-	bool adaptive_pt = false;
-
-	std::string directory;
-};
-
 struct PTWorker
 {
 	const Options options;
@@ -1064,27 +1128,17 @@ struct PTWorker
 
 	PTWorker() : options(Options()) {}
 
-	PTWorker(const Options opt, double temperature, bool output)
-		: options(opt), temperature(temperature), sample(opt.domain_length, opt.domain_length), timing(2, 1)
+	PTWorker(const Options& opt, double temperature, bool output) : options(opt), temperature(temperature), timing(2, 1)
 	{
+		sample = Sample(opt.domain_length, opt.domain_length);
+
 		rng.seed(
 			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
 				.count());
 
-		if (opt.init_random)
-		{
-			std::ostringstream ss;
-			ss << "new-data/disordered/" << opt.domain_length << "x" << opt.domain_length
-			   << "_r-0_t0.000000_j0.000_20000000.200_0/positions.dat";
-			sample.load_from(ss.str(), rng);
-		}
-		else
-		{
-			if (opt.j4_over_u < 0)
-				sample.reconfigure_brick_wall(rng, opt.mono_vacancies / 3);
-			else
-				sample.reconfigure_root3(rng, opt.mono_vacancies / 3);
-		}
+		std::cout << "init\n";
+		sample.initialize(opt, rng);
+		std::cout << "after\n";
 
 		if (output)
 			enable_io();
@@ -1157,7 +1211,7 @@ struct PTWorker
 					std::swap(copy, sample);
 			}
 			else
-				sample.pocket_move(rng, u, j4);
+				sample.pocket_move(rng, u, j4, Sample::boltzmann_cascader());
 		}
 
 		total_steps += options.decorr_interval;
@@ -1221,6 +1275,116 @@ struct PTWorker
 	}
 };
 
+struct MCWorker
+{
+	const Options options;
+
+	Sample sample;
+	std::minstd_rand rng;
+
+	std::unordered_map<InteractionCount, double> log_dos;
+	std::unordered_map<InteractionCount, int> hist;
+	std::ofstream output;
+	std::ofstream output_hist;
+
+	double factor;
+
+	int total_steps = 0;
+
+	MCWorker() : options(Options()) {}
+
+	MCWorker(const Options& opt) : options(opt)
+	{
+		sample = Sample(opt.domain_length, opt.domain_length);
+
+		std::filesystem::path basepath;
+		int runid = 0;
+		do
+		{
+			std::stringstream ss;
+			ss << options.domain_length << "x" << options.domain_length << "_r-" << options.mono_vacancies << "_"
+			   << options.multicanonical_round_length << "." << options.multicanonical_rounds << "_" << runid++;
+			basepath = std::filesystem::path("new-data") / options.directory / ss.str();
+		} while (std::filesystem::exists(basepath));
+		std::filesystem::create_directories(basepath);
+		std::cout << "saving to " << basepath << std::endl;
+
+		output = std::ofstream(basepath / "log-dos.dat");
+		output_hist = std::ofstream(basepath / "hist.dat");
+
+		rng.seed(
+			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+				.count());
+
+		factor = options.multicanonical_init_factor;
+
+		sample.initialize(opt, rng);
+	}
+
+	void write_out()
+	{
+		std::cout << total_steps << " " << factor << std::endl;
+		output << total_steps << " " << factor << std::endl;
+		output_hist << total_steps << " " << factor << std::endl;
+
+		std::vector<std::pair<InteractionCount, int>> counts(hist.begin(), hist.end());
+		std::sort(counts.begin(), counts.end(),
+				  [](const std::pair<InteractionCount, int>& a, const std::pair<InteractionCount, int>& b) {
+					  return a.first.j4 < b.first.j4;
+				  });
+
+		for (auto& [key, value] : counts)
+			std::cout << key.j4 << "," << value << " ";
+		std::cout << std::endl;
+		for (auto& [key, value] : counts)
+			output_hist << key.j4 << "," << value << " ";
+		output_hist << std::endl;
+
+		std::vector<std::pair<InteractionCount, double>> counts2(log_dos.begin(), log_dos.end());
+		std::sort(counts2.begin(), counts2.end(),
+				  [](const std::pair<InteractionCount, double>& a, const std::pair<InteractionCount, double>& b) {
+					  return a.first.j4 < b.first.j4;
+				  });
+		for (auto& [key, value] : counts2)
+			std::cout << key.j4 << "," << value << " ";
+		std::cout << std::endl;
+		for (auto& [key, value] : counts2)
+			output << key.j4 << "," << value << " ";
+		output << std::endl;
+	}
+
+	void one_round()
+	{
+		std::uniform_real_distribution<> uniform(0., 1.);
+		for (int i = 0; i < options.multicanonical_round_length; i++)
+		{
+			sample.calculate_energy();
+			Sample copy = sample;
+			copy.pocket_move(rng, infinity, 0, Sample::boltzmann_cascader());
+			copy.calculate_energy();
+			if (uniform(rng) <= std::exp(log_dos[InteractionCount{sample.clusters_total, sample.j4_total}] -
+										 log_dos[InteractionCount{copy.clusters_total, copy.j4_total}]))
+			{
+				std::swap(copy, sample);
+			}
+
+			log_dos[InteractionCount{sample.clusters_total, sample.j4_total}] += factor;
+			hist[InteractionCount{sample.clusters_total, sample.j4_total}] += 1;
+			total_steps++;
+
+			if ((i + 1) % 100000 == 0)
+				write_out();
+		}
+
+		write_out();
+
+		factor *= options.multicanonical_factor_decay;
+
+		for (auto& [key, value] : hist)
+			value = 0;
+	}
+};
+
 double lerp(double x, double a, double b) { return a + x * (b - a); }
 
 struct PTEnsemble
@@ -1244,6 +1408,8 @@ struct PTEnsemble
 
 		for (uint i = 0; i < options.temperatures.size(); i++)
 			chains.push_back(PTWorker(options, options.temperatures[i], !options.adaptive_pt));
+
+		std::cout << options.adaptive_pt << std::endl;
 
 		acceptance_ratios = Accumulator<double>((uint)(chains.size() - 1), 1);
 		acceptance_ratios_ma = MovingAverage<double>((uint)(chains.size() - 1), 200);
@@ -1319,35 +1485,23 @@ struct PTEnsemble
 		if (options.adaptive_pt && steps_done < options.adaptation_duration &&
 			acceptance_ratios.total >= options.adaptation_interval)
 		{
-			// std::vector<double> new_temps;
-			// for (uint i = 1; i < chains.size() - 1; i++)
-			// {
-			// 	double adjustment_factor =
-			// 		std::tanh(std::log(acceptance_ratios.mean[i] / acceptance_ratios.mean[i - 1]));
-
-			// 	if (adjustment_factor > 0)
-			// 		new_temps.push_back(chains[i].temperature -
-			// 							speed * adjustment_factor *
-			// 								(chains[i].temperature - chains[i - 1].temperature));
-			// 	else
-			// 		new_temps.push_back(chains[i].temperature -
-			// 							speed * adjustment_factor *
-			// 								(chains[i + 1].temperature - chains[i].temperature));
-			// }
-
 			optimize_schedule(acceptance_ratios, chains);
 			acceptance_ratios.reset();
 		}
 
 		if (steps_done >= options.adaptation_duration)
-		{
 			for (auto& chain : chains)
 				chain.enable_io();
-		}
 	}
 
 	void step_all()
 	{
+		if (chains.size() == 0)
+		{
+			std::cout << "no chains" << std::endl;
+			throw "";
+		}
+
 		std::vector<double> timings(2);
 
 		if (chains.size() > 1)
@@ -1433,7 +1587,7 @@ void sim(int argc, char** argv)
 		while (std::getline(ss, token, ','))
 			options.temperatures.push_back(std::stod(token));
 	}
-	else
+	else if (temperatures.find(':') != std::string::npos)
 	{
 		std::string token;
 		std::getline(ss, token, ':');
@@ -1445,6 +1599,10 @@ void sim(int argc, char** argv)
 
 		for (int i = 0; i < count; i++)
 			options.temperatures.push_back(lerp(i / (double)(count - 1), begin, end));
+	}
+	else
+	{
+		options.temperatures.push_back(std::stod(temperatures));
 	}
 
 	options.total_steps = std::stoi(std::string(argv[5]));
@@ -1468,10 +1626,23 @@ void sim(int argc, char** argv)
 	options.adaptive_pt = optstring.find('A') != std::string::npos;
 	options.init_random = optstring.find('R') != std::string::npos;
 
-	PTEnsemble ensemble(options);
-	while (ensemble.steps_done < options.total_steps)
-		ensemble.step_all();
-	ensemble.final_output();
+	options.multicanonical = optstring.find('C') != std::string::npos;
+	options.multicanonical_round_length = options.total_steps;
+	options.multicanonical_rounds = options.decorr_interval;
+
+	if (options.multicanonical)
+	{
+		MCWorker mc(options);
+		for (int i = 0; i < options.multicanonical_rounds; i++)
+			mc.one_round();
+	}
+	else
+	{
+		PTEnsemble ensemble(options);
+		while (ensemble.steps_done < options.total_steps)
+			ensemble.step_all();
+		ensemble.final_output();
+	}
 }
 
 void test_optimizer()
@@ -1493,8 +1664,23 @@ void test_optimizer()
 	TEST_ASSERT2(std::abs(chains[1].temperature - 2.1815) < 1e-2, chains[1].temperature)
 }
 
+void test_pocket()
+{
+	Sample sample(48, 48);
+	std::minstd_rand rng;
+	sample.reconfigure_brick_wall(rng);
+	for (int i = 0; i < 1000; i++)
+		sample.pocket_move(rng, infinity, 0.1, Sample::boltzmann_cascader());
+
+	std::cout << "pocket test passed" << std::endl;
+}
+
 #ifndef TEST
 int main(int argc, char** argv) { sim(argc, argv); }
 #else
-int main() { test_optimizer(); }
+int main()
+{
+	test_optimizer();
+	test_pocket();
+}
 #endif

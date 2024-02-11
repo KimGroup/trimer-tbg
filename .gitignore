@@ -6,3 +6,4 @@ slurm-*.out
 *.pyc
 *.out
 pocket
+pocket_test
