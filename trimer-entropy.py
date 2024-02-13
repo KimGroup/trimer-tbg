@@ -108,6 +108,8 @@ for b in np.linspace(0.001, 1.999, 50):
     p.append(P)
     s.append(S)
 
+print(np.log(np.sum(np.exp(np.array(s)))/2))
+
 p, s = np.array(p), np.array(s)
 
 # symmetry of up/down

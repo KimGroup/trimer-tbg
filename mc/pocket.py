@@ -17,48 +17,6 @@ if height != width:
 R = 1
 plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
-
-def draw_hexalattice(ax, color=None, ls="-"):
-    from matplotlib import collections as mc
-    if color is None:
-        color = "black"
-    Hexa = []
-    HexaLines = []
-
-    for y in range(height + 1):
-        xlen = width + 1
-        xrange = (0, width + 1)
-
-        for x in range(xrange[0], xrange[1]):
-            Hexa.append((R * np.sqrt(3) * x + R * np.sqrt(3) / 2 * y,
-                         R * np.sqrt(3) * y * np.sqrt(3) / 2 + R / 2))
-
-            if x != xrange[0]:
-                HexaLines.append((len(Hexa) - 2, len(Hexa) - 1))
-
-            if y > 0:
-                HexaLines.append((len(Hexa) - 1, len(Hexa) - xlen))
-                HexaLines.append((len(Hexa) - 1, len(Hexa) - xlen - 1))
-
-            # if x < xrange[1] - 1:
-                # HexaLines.append((len(Hexa) - 1, len(Hexa) - xlen))
-
-    ax.add_collection(mc.LineCollection(
-        [(Hexa[x], Hexa[y]) for x, y in HexaLines], color=color, lw=1, ls=ls, zorder=0.5))
-
-
-def trilatloc(xy, updown):
-    xy = (xy[0], xy[1] + 1)
-
-    return (
-        (xy[0] + 1/2) * np.sqrt(3) * R + xy[1] * np.sqrt(3) * R / 2,
-        xy[1] * np.sqrt(3) * R * np.sqrt(3) / 2
-    ) if updown == "down" else (
-        xy[0] * np.sqrt(3) * R + xy[1] * np.sqrt(3) * R / 2,
-        xy[1] * np.sqrt(3) * R * np.sqrt(3) / 2 - R / 2
-    )
-
-
 def draw_duallattice(ax, color=None, ls="-"):
     if color is None:
         color = "black"
@@ -80,7 +38,7 @@ def draw_duallattice(ax, color=None, ls="-"):
             [xy[1] + R/2, xy[1] + R], color=color, lw=1, zorder=-0.5)
 
 
-def show_tiling(ax, sample, color="blue", wf="hexa", zoom=1):
+def show_tiling(ax, sample, color_bonds=False, color="blue", wf="hexa", zoom=1):
     pos, _ = sample
     patches = []
     for x, y, s in pos:

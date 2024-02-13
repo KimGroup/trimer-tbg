@@ -3,7 +3,7 @@
 #SBATCH --mem-per-cpu=1G
 #SBATCH --time=2-0
 #SBATCH --cpus-per-task=12
-#SBATCH --ntasks=1
+#SBATCH --ntasks=7
 
 # ./pocket 48 0 -0.1 0.036,0.037,0.038,0.04,0.042,0.044,0.046,0.05 10000000 20 mectA 1000 pt-adaptive
 # ./pocket 48 6 -0.1 0.033,0.035,0.0357,0.0359,0.0435,0.0461,0.05 10000000 15 mect 1000 temp/pt-doped5
@@ -11,11 +11,40 @@
 
 # ./pocket 48 0 0.2 0.24,0.245,0.246,0.2465,0.247,0.2475,0.248,0.2485,0.249,0.25,0.255 10000000 15 mectA 2000 pt/0.2/48b
 # ./pocket 48 0 -0.8 0.24,0.245,0.25,0.255,0.26,0.27,0.28,0.29,0.3 10000000 15 mectA 2000 rough-pt/-0.8/2
-# ./pocket 48 0 0.3 0.26,0.27,0.272,0.274,0.276,0.278,0.28,0.29,0.3,0.31,0.34 10000000 15 mectA 2000 rough-pt/0.3/1
-# ./pocket 48 0 -1 0.25,0.27,0.272,0.273,0.274,0.275,0.276,0.278,0.28,0.29,0.3 10000000 15 mectA 2000 rough-pt/-1/3
-# ./pocket 48 0 -1.5 0.30,0.31,0.32,0.33,0.34,0.35,0.36,0.37,0.38,0.39,0.40 10000000 15 mectA 2000 rough-pt/-1.5/3
-# ./pocket 48 0 -2 0.40,0.41,0.42,0.43,0.44,0.45,0.46,0.47,0.48,0.49,0.50 10000000 15 mectA 2000 rough-pt/-2/1
-./pocket 36 0 0.2 0.24:12:0.255 10000000 15 mectA 5000 pt/0.2/36/1
+# ./pocket 60 0 0.2 0.24:12:0.255 10000000 15 mectA 5000 pt/0.2/60/1
+
+# ./pocket 24 0 0.3 0.27:12:0.30 20000000 10 mectA 2000 vsweeps/pt/0.3/24/1
+# ./pocket 60 0 0.1 0.195:12:0.200 20000000 10 mectA 5000 vsweeps/roughpt/0.1/60/1
+
+# srun --exclusive -n 1 -c 12 ./pocket 24 0 0.2 0.2455:12:0.2475 30000000 15 mectoA 5000 pto/0.2b/ &
+# srun --exclusive -n 1 -c 12 ./pocket 48 0 0.2 0.2455:12:0.2475 30000000 15 mectoA 5000 pto/0.2b/ &
+# srun --exclusive -n 1 -c 12 ./pocket 36 0 0.2 0.2455:12:0.2475 30000000 15 mectoA 5000 pto/0.2b/ &
+# srun --exclusive -n 1 -c 12 ./pocket 60 0 0.2 0.2455:12:0.2475 30000000 15 mectoA 5000 pto/0.2b/ &
+# srun --exclusive -n 1 -c 12 ./pocket 66 0 0.2 0.2455:12:0.2475 30000000 15 mectoA 5000 pto/0.2b/ &
+# srun --exclusive -n 1 -c 12 ./pocket 72 0 0.2 0.2455:12:0.2475 30000000 15 mectoA 5000 pto/0.2b/ &
+# srun --exclusive -n 1 -c 12 ./pocket 18 0 0.2 0.2455:12:0.2475 30000000 15 mectoA 5000 pto/0.2b/ &
+# srun --exclusive -n 1 -c 12 ./pocket 30 0 0.2 0.2455:12:0.2475 30000000 15 mectoA 5000 pto/0.2b/ &
+# srun --exclusive -n 1 -c 12 ./pocket 42 0 0.2 0.2455:12:0.2475 30000000 15 mectoA 5000 pto/0.2b/ &
+# srun --exclusive -n 1 -c 12 ./pocket 54 0 0.2 0.2455:12:0.2475 30000000 15 mectoA 5000 pto/0.2b/ &
+
+# srun --exclusive -n 1 -c 12 ./pocket 18 0 -0.1 0.02:12:0.05 30000000 15 mectoA 5000 pto/-0.1/ &
+# srun --exclusive -n 1 -c 12 ./pocket 24 0 -0.1 0.02:12:0.05 30000000 15 mectoA 5000 pto/-0.1/ &
+# srun --exclusive -n 1 -c 12 ./pocket 30 0 -0.1 0.02:12:0.05 30000000 15 mectoA 5000 pto/-0.1/ &
+# srun --exclusive -n 1 -c 12 ./pocket 36 0 -0.1 0.02:12:0.05 30000000 15 mectoA 5000 pto/-0.1/ &
+# srun --exclusive -n 1 -c 12 ./pocket 42 0 -0.1 0.02:12:0.05 30000000 15 mectoA 5000 pto/-0.1/ &
+# srun --exclusive -n 1 -c 12 ./pocket 48 0 -0.1 0.02:12:0.05 30000000 15 mectoA 5000 pto/-0.1/ &
+# srun --exclusive -n 1 -c 12 ./pocket 54 0 -0.1 0.02:12:0.05 30000000 15 mectoA 5000 pto/-0.1/ &
+
+srun --exclusive -n 1 -c 12 ./pocket 12 0 0.01 0.02:12:0.10 30000000 15 mectoA 5000 pto/0.01/rt3 &
+srun --exclusive -n 1 -c 12 ./pocket 24 0 0.01 0.02:12:0.10 30000000 15 mectoA 5000 pto/0.01/rt3 &
+srun --exclusive -n 1 -c 12 ./pocket 36 0 0.01 0.02:12:0.10 30000000 15 mectoA 5000 pto/0.01/rt3 &
+srun --exclusive -n 1 -c 12 ./pocket 48 0 0.01 0.02:12:0.10 30000000 15 mectoA 5000 pto/0.01/rt3 &
+srun --exclusive -n 1 -c 12 ./pocket 12 0 0.01 0.02:12:0.10 30000000 15 mectoAR 5000 pto/0.01/rand &
+srun --exclusive -n 1 -c 12 ./pocket 24 0 0.01 0.02:12:0.10 30000000 15 mectoAR 5000 pto/0.01/rand &
+srun --exclusive -n 1 -c 12 ./pocket 36 0 0.01 0.02:12:0.10 30000000 15 mectoAR 5000 pto/0.01/rand &
+srun --exclusive -n 1 -c 12 ./pocket 48 0 0.01 0.02:12:0.10 30000000 15 mectoAR 5000 pto/0.01/rand &
+
+
 
 
 wait

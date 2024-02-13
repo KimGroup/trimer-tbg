@@ -2,6 +2,126 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib
+import pocket
+
+def parse_positions(l):
+    pos = []
+    for entry in l.strip().split(" "):
+        if entry == "": continue
+        tokens = entry[1:-1].split(",")
+        pos.append((int(tokens[0]), int(tokens[1]), int(tokens[2])))
+    return pos
+
+def read_positions(f, stride=1):
+    pos = []
+    with open(f, "r") as f:
+        for index, l in enumerate(f):
+            if index % stride == 0:
+                pos.append(parse_positions(l))
+    return pos
+
+def trimer_coords(x, y, s):
+    if s == 1:
+        return (x + y/2 + 1, y * np.sqrt(3)/2 + 1/np.sqrt(3))
+    else:
+        return (x + y/2 + 1/2, y * np.sqrt(3)/2 + 1/np.sqrt(3)/2)
+
+def mono_coords(x, y):
+    return (x + y/2, y * np.sqrt(3)/2)
+
+def draw_hexalattice(ax, width, height, color=None, ls="-"):
+    if color is None:
+        color = "black"
+    R = 1
+    vertices = []
+    lines = []
+
+    for y in range(height + 1):
+        xlen = width + 1
+        xrange = (0, width + 1)
+
+        for x in range(xrange[0], xrange[1]):
+            vertices.append(mono_coords(x, y))
+
+            if x != xrange[0]:
+                lines.append((len(vertices) - 2, len(vertices) - 1))
+
+            if y > 0:
+                lines.append((len(vertices) - 1, len(vertices) - xlen))
+                lines.append((len(vertices) - 1, len(vertices) - xlen - 1))
+
+            # if x < xrange[1] - 1:
+            #     lines.append((len(vertices) - 1, len(vertices) - xlen))
+
+    ax.add_collection(matplotlib.collections.LineCollection(
+        [(vertices[x], vertices[y]) for x, y in lines], color=color, lw=1, ls=ls, zorder=0.5))
+
+def show_positions(ax, positions):
+    width = max(x for x, y, s in positions)+1
+    height = max(y for x, y, s in positions)+1
+    draw_hexalattice(ax, width, height)
+    positions = set(positions)
+
+    monomers = set()
+    for i in range(width):
+        for j in range(height):
+            monomers.add((i, j))
+    doublons = set()
+
+    patches = []
+    j4lines = []
+    brokenj4lines = []
+    for x, y, s in positions:
+        xy = trimer_coords(x, y, s)
+        patches.append(mpatches.RegularPolygon(xy, numVertices=3,
+                                            radius=1/np.sqrt(3),
+                                            orientation=s*np.pi))
+        
+        mono_pos = []
+        if s == 0:
+            for dx, dy in [(0, 0), (1, 0), (0, 1)]:
+                mono_pos.append(((x+dx)%width, (y+dy)%height))
+        else:
+            for dx, dy in [(1, 1), (1, 0), (0, 1)]:
+                mono_pos.append(((x+dx)%width, (y+dy)%height))
+        
+        for mx, my in mono_pos:
+            if (mx, my) in monomers:
+                monomers.remove((mx, my))
+            else:
+                doublons.add((mx, my))
+
+        if s == 0:
+            for dx, dy in [(0, 1), (1, 0), (0, -2), (1, -2), (-2, 0), (-2, 1)]:
+                if (x+dx, y+dy, 1) in positions:
+                    j4lines.append([trimer_coords(x, y, 0), trimer_coords(x+dx, y+dy, 1)])
+            for dx, dy in [(1, 1), (1, -2), (-2, 1)]:
+                if (x+dx, y+dy, s) in positions:
+                    brokenj4lines.append([trimer_coords(x, y, s), trimer_coords(x+dx, y+dy, s)])
+        else:
+            for dx, dy in [(1, 1), (1, -2), (-2, 1)]:
+                if (x+dx, y+dy, s) in positions:
+                    brokenj4lines.append([trimer_coords(x, y, s), trimer_coords(x+dx, y+dy, s)])
+    
+    monopatches = []
+    for x, y in monomers:
+        monopatches.append(mpatches.Circle(mono_coords(x, y), radius=1/np.sqrt(3)/2))
+    doubpatches = []
+    for x, y in doublons:
+        doubpatches.append(mpatches.Circle(mono_coords(x, y), radius=1/np.sqrt(3)/2))
+
+    ax.add_collection(matplotlib.collections.PatchCollection(monopatches, edgecolors="black", facecolors="lime", zorder=1.5))
+    ax.add_collection(matplotlib.collections.PatchCollection(doubpatches, edgecolors="black", facecolors="red", zorder=1.5))
+
+    ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors="black", facecolors="black"))
+    ax.add_collection(matplotlib.collections.LineCollection(j4lines, color="dodgerblue", lw=2, ls="-", zorder=2))
+    ax.add_collection(matplotlib.collections.LineCollection(brokenj4lines, color="orchid", lw=2, ls="-", zorder=2))
+
+
+    ax.axis("off")
+    ax.set_xlim([0, 30])
+    ax.set_ylim([0, 30])
+    ax.set_aspect("equal")
 
 def read_accumulator(fname, skip=0, take=None):
     state = "count"
@@ -99,6 +219,40 @@ def get_all_cvs(glob, skip=0, take=None, by="t"):
                         np.zeros_like(data[1][2]) if props["t"] == 0 else
                         data[1][2]**2/props["t"]**2/(props["l"]**2/3 - props["r"]/3), skip=skip, take=take, by=by)
 
+def get_all_curves(globs, prop="cv", bounds=None, skip=0, take=None):
+    props = []
+    ds = []
+
+    for glob in globs:
+        if prop == "cv":
+            nprops, nds = get_all_cvs(glob, skip=skip, by="fname")
+        elif prop == "e":
+            nprops, nds = get_all_energies(glob, skip=skip, by="fname")
+        elif prop == "k":
+            nprops, nds = get_all_data(glob, lambda data, props: data[0][3]/props["l"]**2, skip=skip, by="fname")
+        elif prop == "kb":
+            nprops, nds = get_all_data(glob, lambda data, props: data[0][5]/data[0][4]**2, skip=skip, by="fname")
+        elif prop == "m":
+            nprops, nds = get_all_data(glob, lambda data, props: data[0][0]/props["l"]**2, skip=skip, by="fname")
+        elif prop == "mb":
+            nprops, nds = get_all_data(glob, lambda data, props: data[0][2]/data[0][1]**2, skip=skip, by="fname")
+
+        props += nprops.tolist()
+        ds += nds.tolist()
+
+    lens = sorted(set(x["l"] for x in props))
+
+    curves = []
+    for l in lens:
+        ts = []
+        ys = []
+        for prop, y in sorted(((prop, y) for prop, y in zip(props, ds) if prop["l"] == l), key=lambda x: x[0]["t"]):
+            if bounds is None or bounds[0] < prop["t"] < bounds[1]:
+                ts.append(prop["t"])
+                ys.append(y)
+        curves.append((l, np.array(ts), np.array(ys)))
+    return curves
+
 def autocorr(vals, label=None):
     vals = np.array(vals)
     bvar = np.var(vals, ddof=1)
@@ -125,31 +279,6 @@ def bin(data, width):
         data = np.array(data)
     return data[:(data.size // width) * width].reshape(-1, width).mean(axis=1)
 
-def plot2d_old(ax, d, l, scale=None, title=None):
-    data = np.zeros((l, l))
-    for key, value in d.items():
-        data[key[0]+l//2, key[1]+l//2] = value
-
-    data[l//2, l//2]=0
-    if scale is not None:
-        data = scale(data)
-
-    ax.axis("off")
-    ax.set_xlim([-25, 25])
-    ax.set_ylim([-15, 15])
-    ax.set_aspect("equal")
-
-    patches = []
-    colors = []
-    N = matplotlib.colors.Normalize(vmin=np.min(data), vmax=np.max(data))
-    for i in range(-l//2, l//2):
-        for j in range(-l//2, l//2):
-            patches.append(matplotlib.patches.Circle((i+j/2, j*np.sqrt(3)/2), radius=0.5))
-            colors.append(matplotlib.colormaps["viridis"](N(data[(i+l//2), (j+l//2)])))
-    ax.add_collection(matplotlib.collections.PatchCollection(patches, facecolors=colors))
-    plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
-    plt.title(f"monomer-monomer correlation L={l} filling=-1" if title is None else title)
-
 def plot2d(ax, data, log=False, show_dimer=False):
     ax.axis("off")
     ax.set_xlim([-25, 25])
@@ -172,7 +301,7 @@ def plot2d(ax, data, log=False, show_dimer=False):
                 i -= data.shape[0]
             if j >= data.shape[1]//2:
                 j -= data.shape[1]
-            patches.append(matplotlib.patches.RegularPolygon((i+j/2, j*np.sqrt(3)/2), numVertices=6, radius=1/np.sqrt(3), orientation=0))
+            patches.append(matplotlib.patches.RegularPolygon(mono_coords(i, j), numVertices=6, radius=1/np.sqrt(3), orientation=0))
 
     ax.add_collection(matplotlib.collections.PatchCollection(patches, facecolors=colors))
     if show_dimer:
@@ -198,30 +327,8 @@ def plot2d_hex(ax, data, title=None):
                     i -= data.shape[0]
                 if j >= data.shape[1]//2:
                     j -= data.shape[1]
-                if k == 1:
-                    dx, dy = 1, 1 / np.sqrt(3)
-                else:
-                    dx, dy = 0.5, 0.5 / np.sqrt(3)
 
-                patches.append(matplotlib.patches.RegularPolygon((i+j/2+dx, j*np.sqrt(3)/2+dy), numVertices=3, radius=1/np.sqrt(3), orientation=k*np.pi))
-
-    ax.add_collection(matplotlib.collections.PatchCollection(patches, facecolors=colors))
-    plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
-    plt.title(title)
-
-def plot2d_arb(ax, data, xs, ys, title=None):
-    ax.axis("off")
-    ax.set_xlim([-25, 25])
-    ax.set_ylim([-15, 15])
-    ax.set_aspect("equal")
-
-    patches = []
-    colors = []
-
-    N = matplotlib.colors.Normalize(vmin=np.min(data), vmax=np.max(data))
-    for d, x, y in zip(data, xs, ys):
-        patches.append(matplotlib.patches.RegularPolygon((x, y), numVertices=6, radius=0.5/np.sqrt(3)))
-        colors.append(matplotlib.colormaps["viridis"](N(d)))
+                patches.append(matplotlib.patches.RegularPolygon(trimer_coords(i, j, k), numVertices=3, radius=1/np.sqrt(3), orientation=k*np.pi))
 
     ax.add_collection(matplotlib.collections.PatchCollection(patches, facecolors=colors))
     plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
@@ -235,10 +342,8 @@ def FT_hex(vals):
     radius = vals.shape[0]/4.5
 
     def add(x, y, s):
-        if s == 1:
-            xy = (x + y * 0.5 + 0.5, y * np.sqrt(3) / 2 + 1/np.sqrt(3)/2)
-        else:
-            xy = (x + y * 0.5, y * np.sqrt(3) / 2)
+        xy = trimer_coords(x, y, s)
+
 
         if (xy[0]**2 + xy[1]**2 < (radius*3)**2):
             newx.append(xy[0])
@@ -258,108 +363,6 @@ def FT_hex(vals):
     def corr(k):
         return np.sum(np.exp(-1j * (newx * k[0] * np.pi + newy * k[1] * np.pi)) * newvals)
     return corr
-
-def FT_hex2(vals):
-    newvals = []
-    newx = []
-    newy = []
-
-    nrows = (vals.shape[0] // 2) * 2 + 1
-    halfnrows = nrows // 2
-
-    def add(x, y, s):
-        newvals.append(vals[x%vals.shape[0], y%vals.shape[1], s])
-        if s == 1:
-            newx.append(x + y * 0.5 + 0.5)
-            newy.append(y * np.sqrt(3)/2 + 1/np.sqrt(3)/2)
-        else:
-            newx.append(x + y * 0.5)
-            newy.append(y * np.sqrt(3)/2)
-
-    for row in range(-halfnrows, halfnrows+1):
-        if row < 0:
-            rowsize = nrows + row
-            rowstart = (-halfnrows-row, row)
-
-            add(rowstart[0]-1, rowstart[1], 1)
-            for col in range(rowsize):
-                add(rowstart[0]+col, rowstart[1], 0)
-                add(rowstart[0]+col, rowstart[1], 1)
-        else:
-            rowsize = nrows - row - 1
-            rowstart = (-halfnrows, row)
-
-            for col in range(rowsize):
-                add(rowstart[0]+col, rowstart[1], 0)
-                add(rowstart[0]+col, rowstart[1], 1)
-            add(rowstart[0]+rowsize, rowstart[1], 0)
-
-    newx = np.array(newx)
-    newy = np.array(newy)
-    newvals = np.array(newvals)
-
-    def corr(k):
-        return np.sum(np.exp(-1j * (newx * k[0] * np.pi + newy * k[1] * np.pi)) * newvals)
-
-    return corr
-
-
-def FT_hex3(vals):
-    newvals = []
-    newx = []
-    newy = []
-
-    maxwidth = (vals.shape[0] // 3) * 3
-    nmaxrows = (maxwidth // 3) * 2 + 1
-    ncornerrows = (maxwidth // 3)
-
-    def add(x, y, s):
-        newvals.append(vals[x%vals.shape[0], y%vals.shape[1], s])
-        if s == 1:
-            newx.append(x + y * 0.5 + 0.5)
-            newy.append(y * np.sqrt(3) / 2 + 1/np.sqrt(3)/2)
-        else:
-            newx.append(x + y * 0.5)
-            newy.append(y * np.sqrt(3) / 2)
-
-    # bulk
-    for row in range(nmaxrows):
-        rowstart = (-(nmaxrows//2) - row//2, row - (nmaxrows//2))
-        for col in range(maxwidth):
-            add(rowstart[0]+col, rowstart[1], 0)
-            add(rowstart[0]+col, rowstart[1], 1)
-        if row % 2 == 0:
-            add(rowstart[0]+maxwidth, rowstart[1], 0)
-        else:
-            add(rowstart[0]-1, rowstart[1], 1)
-
-    # lower corner
-    for row in range(ncornerrows):
-        rowstart = (-ncornerrows+(row+1)*2, -ncornerrows-(row+1))
-        width = maxwidth-2-row*3
-        add(rowstart[0]-1, rowstart[1], 1)
-        for col in range(width):
-            add(rowstart[0]+col, rowstart[1], 0)
-            add(rowstart[0]+col, rowstart[1], 1)
-
-    # # upper corner
-    for row in range(ncornerrows):
-        rowstart = (-ncornerrows*2+row+1, ncornerrows+(row+1))
-        width = maxwidth-3-row*3
-        for col in range(width):
-            add(rowstart[0]+col, rowstart[1], 0)
-            add(rowstart[0]+col, rowstart[1], 1)
-        add(rowstart[0]+width, rowstart[1], 0)
-
-    newx = np.array(newx)
-    newy = np.array(newy)
-    newvals = np.array(newvals)
-
-    def corr(k):
-        return np.sum(np.exp(-1j * (newx * k[0] * np.pi + newy * k[1] * np.pi)) * newvals)
-
-    return corr
-
 
 coords = None
 extent = 2.5
@@ -390,7 +393,6 @@ def make_coords():
                     break
 
             coords[x, y] = [xy[0], xy[1]]
-
 
 def plot_FT(ax, ft, proj="re", fold=True):
     make_coords()
@@ -444,7 +446,6 @@ def plot_FT(ax, ft, proj="re", fold=True):
     ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="k", alpha=0.2, lw=0.5))
     ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="k", orientation=np.pi/6, alpha=0.2, lw=0.5))
     plt.colorbar(matplotlib.cm.ScalarMappable(norm, cmap=cmap), ax=ax)
-
 
 def plot_timeseries(ax, data, std, label=None):
     xs = np.arange(len(data))
