@@ -3,7 +3,11 @@
 #SBATCH --mem-per-cpu=1G
 #SBATCH --time=2-0
 #SBATCH --cpus-per-task=1
-#SBATCH --ntasks=1
+#SBATCH --ntasks=3
+
+srun --exclusive -n 1 ./pocket 84 1 0 0 200000000 20 etmR 50000 t0j0 &
+srun --exclusive -n 1 ./pocket 108 1 0 0 200000000 20 etmR 100000 t0j0 &
+srun --exclusive -n 1 ./pocket 120 1 0 0 200000000 20 etmR 100000 t0j0 &
 
 # srun --exclusive -n 1 ./pocket 6 0 0 0 20000000 200 eE 10000 disordered &
 # srun --exclusive -n 1 ./pocket 18 0 0 0 20000000 200 eE 10000 disordered &
@@ -53,8 +57,6 @@
 # srun --exclusive -n 1 ./pocket 24 0 -0.1 0.038 20000000 20 etcoR 10000 vsweeps/rough/-0.1/rand &
 # srun --exclusive -n 1 ./pocket 24 0 -0.1 0.040 20000000 20 etcoR 10000 vsweeps/rough/-0.1/rand &
 
-srun --exclusive -n 1 ./pocket 48 1 0 0.1 20000000 20 etcd 10000 finite-t/j0 &
-
 # srun --exclusive -n 1 ./pocket 48 0 0.01 0.1 20000000 20 etcoR 10000 hsweeps/0.1 &
 # srun --exclusive -n 1 ./pocket 48 0 0.008 0.1 20000000 20 etcoR 10000 hsweeps/0.1 &
 # srun --exclusive -n 1 ./pocket 48 0 0.006 0.1 20000000 20 etcoR 10000 hsweeps/0.1 &
@@ -66,5 +68,31 @@ srun --exclusive -n 1 ./pocket 48 1 0 0.1 20000000 20 etcd 10000 finite-t/j0 &
 # srun --exclusive -n 1 ./pocket 48 0 -0.006 0.1 20000000 20 etcoR 10000 hsweeps/0.1 &
 # srun --exclusive -n 1 ./pocket 48 0 -0.008 0.1 20000000 20 etcoR 10000 hsweeps/0.1 &
 # srun --exclusive -n 1 ./pocket 48 0 -0.01 0.1 20000000 20 etcoR 10000 hsweeps/0.1 &
+
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.02 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.03 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.04 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.05 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.06 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.07 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.08 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.09 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.10 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.11 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.12 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.13 20000000 20 etcmo 10000 vsweeps/rough/0.01r3/rt3 &
+
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.02 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.03 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.04 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.05 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.06 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.07 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.08 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.09 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.10 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.11 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.12 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.13 20000000 20 etcmoR 10000 vsweeps/rough/0.01r3/rand &
 
 wait

@@ -590,14 +590,17 @@ struct Sample
 		a.record(vals);
 	}
 
-	void record_order_parameters(Accumulator<double>& a)
+	void record_order_parameters(Accumulator<double>& acc)
 	{
-		std::vector<double> vals(6);
+		std::vector<double> vals(8);
 
 		const double rt3 = std::sqrt(3.);
 		const double Kpx0 = 4. / 3, Kpy0 = 0;
-		const double Kpx1 = -2. / 3, Kpy1 = 2 * rt3 / 3;
-		const double Kpx2 = -2. / 3, Kpy2 = -2 * rt3 / 3;
+		// const double Kpx1 = -2. / 3, Kpy1 = 2 * rt3 / 3;
+		// const double Kpx2 = -2. / 3, Kpy2 = -2 * rt3 / 3;
+		const double Kpx1 = 4. / 3, Kpy1 = 4. / rt3 / (double)h;
+		const double Kpx2 = 4. / 3, Kpy2 = 8. / rt3 / (double)w;
+
 		const double Mpx0 = 0, Mpy0 = 2 * rt3 / 3;
 		const double Mpx1 = 1, Mpy1 = -rt3 / 3;
 		const double Mpx2 = -1, Mpy2 = -rt3 / 3;
@@ -644,15 +647,18 @@ struct Sample
 			}
 		}
 
-		vals[0] = std::abs(M0) + std::abs(M1) + std::abs(M2);
+		vals[0] = (std::abs(M0) + std::abs(M1) + std::abs(M2)) / 3.;
 		vals[1] = vals[0] * vals[0];
 		vals[2] = vals[1] * vals[1];
 
-		vals[3] = std::abs(K0) + std::abs(K1) + std::abs(K2);
+		vals[3] = std::abs(K0);
 		vals[4] = vals[3] * vals[3];
 		vals[5] = vals[4] * vals[4];
 
-		a.record(vals);
+		vals[6] = std::abs(K1);
+		vals[7] = std::abs(K2);
+
+		acc.record(vals);
 	}
 
 	template <typename Rng>
@@ -767,12 +773,14 @@ struct Sample
 
 	void record_energy(Accumulator<double>& a, double j4_over_u)
 	{
-		std::vector<double> vals(3);
+		std::vector<double> vals(5);
 		calculate_energy();
 
 		vals[0] = clusters_total;
 		vals[1] = j4_total;
 		vals[2] = clusters_total + j4_total * j4_over_u;
+		vals[3] = vals[2] * vals[2];
+		vals[4] = vals[3] * vals[3];
 
 		a.record(vals);
 	}
@@ -1244,12 +1252,12 @@ struct PTWorker
 
 			amonomono =
 				Accumulator<double>(options.domain_length * options.domain_length, options.accumulator_interval);
-			aorder = Accumulator<double>(6, options.accumulator_interval);
+			aorder = Accumulator<double>(8, options.accumulator_interval);
 			aclustercount = Accumulator<double>(7, options.accumulator_interval);
 			amonodi = Accumulator<double>(options.domain_length * options.domain_length, options.accumulator_interval);
 			atritri =
 				Accumulator<double>(options.domain_length * options.domain_length * 2, options.accumulator_interval);
-			aenergy = Accumulator<double>(3, options.accumulator_interval);
+			aenergy = Accumulator<double>(5, options.accumulator_interval);
 		}
 	}
 
@@ -1300,7 +1308,7 @@ struct PTWorker
 			if (options.out_monodi)
 				sample.record_dimer_monomer_correlations(amonodi, rng, 10);
 			if (options.out_tritri)
-				sample.record_partial_trimer_correlations(atritri, rng, 64. / (sample.w * sample.h / 3));
+				sample.record_partial_trimer_correlations(atritri, rng, 20. / (sample.w * sample.h / 3));
 			if (options.out_energy)
 				sample.record_energy(aenergy, options.j4_over_u);
 			if (options.out_order)

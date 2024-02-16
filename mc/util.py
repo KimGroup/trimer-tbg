@@ -4,6 +4,12 @@ import matplotlib.patches as mpatches
 import matplotlib
 import pocket
 
+def gen_colors(curves):
+    if isinstance(curves[0], np.int64):
+        return {curves[i]: matplotlib.colormaps["inferno"](0.8*i/(len(curves)-1) if len(curves)>1 else 1) for i in range(len(curves))}
+    else:
+        return {curves[i][0]: matplotlib.colormaps["inferno"](0.8*i/(len(curves)-1) if len(curves)>1 else 1) for i in range(len(curves))}
+
 def parse_positions(l):
     pos = []
     for entry in l.strip().split(" "):
@@ -228,6 +234,8 @@ def get_all_curves(globs, prop="cv", bounds=None, skip=0, take=None):
             nprops, nds = get_all_cvs(glob, skip=skip, by="fname")
         elif prop == "e":
             nprops, nds = get_all_energies(glob, skip=skip, by="fname")
+        elif prop == "eb":
+            nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][4]/3/data[0][3]**2, skip=skip, by="fname")
         elif prop == "k":
             nprops, nds = get_all_data(glob, lambda data, props: data[0][3]/props["l"]**2, skip=skip, by="fname")
         elif prop == "kb":
@@ -236,6 +244,12 @@ def get_all_curves(globs, prop="cv", bounds=None, skip=0, take=None):
             nprops, nds = get_all_data(glob, lambda data, props: data[0][0]/props["l"]**2, skip=skip, by="fname")
         elif prop == "mb":
             nprops, nds = get_all_data(glob, lambda data, props: data[0][2]/data[0][1]**2, skip=skip, by="fname")
+        elif prop == "mono":
+            nprops, nds = get_all_data(glob, lambda data, props: data[0][0]/props["l"]**2, skip=skip, by="fname")
+        elif prop == "corr":
+            nprops, nds = get_all_data(glob, lambda data, props: (1/2)*np.sqrt(data[0][3]/data[0][6] - 1), skip=skip, by="fname")
+        elif prop == "corr2":
+            nprops, nds = get_all_data(glob, lambda data, props: (1/2)*np.sqrt((data[0][6]/data[0][7] - 1)/(4 - data[0][6]/data[0][7])), skip=skip, by="fname")
 
         props += nprops.tolist()
         ds += nds.tolist()
