@@ -340,7 +340,7 @@ struct Options
 	bool out_monodi = false;
 	bool out_tritri = false;
 	bool out_energy = false;
-	bool out_energy2 = false;
+	bool out_histogram = false;
 	bool out_order = false;
 
 	bool idealbrickwall = false;
@@ -358,13 +358,14 @@ struct Options
 
 	int position_interval = 50000;
 	int total_steps = 0;
-	int decorr_interval = 0;
+	int decorr_interval = 1;
 	int accumulator_interval = 0;
 	int swap_interval = 10;
 	int adaptation_interval = 500;
-	int adaptation_duration = 1500000;
+	int adaptation_duration = 800000;
 
-	double j4_over_u = 0;
+	double j4 = 0;
+	double u = infinity;
 	std::vector<double> temperatures;
 	bool adaptive_pt = false;
 
@@ -381,6 +382,7 @@ struct Sample
 
   public:
 	static const std::array<std::array<MonomerPos, 6>, 2> j4_neighbor_list;
+	static const std::array<MonomerPos, 3> j6_neighbor_list;
 
 	int32_t w, h;
 	std::vector<bool> trimer_occupations;
@@ -421,11 +423,11 @@ struct Sample
 			std::ostringstream ss;
 			ss << "new-data/disordered/" << opt.domain_length << "x" << opt.domain_length
 			   << "_r-0_t0.000000_j0.000_20000000.200_0/positions.dat";
-			load_from(ss.str(), rng);
+			load_from(ss.str(), rng, opt.mono_vacancies / 3);
 		}
 		else
 		{
-			if (opt.j4_over_u < 0)
+			if (opt.j4 < 0)
 				reconfigure_brick_wall(rng, opt.mono_vacancies / 3);
 			else
 				reconfigure_root3(rng, opt.mono_vacancies / 3);
@@ -590,9 +592,17 @@ struct Sample
 		a.record(vals);
 	}
 
-	void record_order_parameters(Accumulator<double>& acc)
+	struct Observables
 	{
-		std::vector<double> vals(8);
+		double structure_factor_K;
+		double structure_factor_K1;
+		double structure_factor_K2;
+		int sublattice_polarization;
+	};
+
+	struct Observables record_order_parameters(Accumulator<double>& acc)
+	{
+		std::vector<double> vals(11);
 
 		const double rt3 = std::sqrt(3.);
 		const double Kpx0 = 4. / 3, Kpy0 = 0;
@@ -607,13 +617,15 @@ struct Sample
 
 		complex M0, M1, M2, K0, K1, K2;
 
+		int AmB = 0;
+
 		for (int i = 0; i < (int)trimer_occupations.size(); i++)
 		{
 			if (trimer_occupations[i])
 			{
+				auto pos = TrimerPos::from_index(i, w);
 				if (!_ft_contributions.contains(i))
 				{
-					auto pos = TrimerPos::from_index(i, w);
 					double x = pos.x + pos.y * 0.5;
 					double y = pos.y * rt3 / 2;
 					if (pos.s == 1)
@@ -644,6 +656,8 @@ struct Sample
 				K0 += cont[3];
 				K1 += cont[4];
 				K2 += cont[5];
+
+				AmB += pos.s * 2 - 1;
 			}
 		}
 
@@ -658,7 +672,13 @@ struct Sample
 		vals[6] = std::abs(K1);
 		vals[7] = std::abs(K2);
 
+		vals[8] = std::abs(AmB);
+		vals[9] = vals[8] * vals[8];
+		vals[10] = vals[9] * vals[9];
+
 		acc.record(vals);
+
+		return Observables{std::abs(K0), std::abs(K1), std::abs(K2), AmB};
 	}
 
 	template <typename Rng>
@@ -703,7 +723,7 @@ struct Sample
 	}
 
 	template <typename Rng>
-	void record_partial_monomer_correlations(Accumulator<double>& a, Rng& rng, double fraction) const
+	void record_partial_monomer_correlations(Accumulator<double>& a, Rng& rng, int max_count) const
 	{
 		std::vector<double> vals(w * h);
 		std::vector<MonomerPos> pos;
@@ -713,7 +733,7 @@ struct Sample
 				pos.push_back(MonomerPos::from_index(i, w));
 
 		std::shuffle(pos.begin(), pos.end(), rng);
-		uint sample_count = (uint)std::min(pos.size(), (size_t)(fraction * (double)pos.size()) + 1);
+		uint sample_count = (uint)std::min(pos.size(), (size_t)max_count);
 
 		for (uint i = 0; i < sample_count; i++)
 		{
@@ -771,18 +791,25 @@ struct Sample
 		a.record(vals);
 	}
 
-	void record_energy(Accumulator<double>& a, double j4_over_u)
+	double record_energy(Accumulator<double>& a, double u, double j4)
 	{
 		std::vector<double> vals(5);
 		calculate_energy();
 
 		vals[0] = clusters_total;
 		vals[1] = j4_total;
-		vals[2] = clusters_total + j4_total * j4_over_u;
+
+		if (u < infinity)
+			vals[2] = clusters_total * u + j4_total * j4;
+		else
+			vals[2] = j4_total * j4;
+
 		vals[3] = vals[2] * vals[2];
 		vals[4] = vals[3] * vals[3];
 
 		a.record(vals);
+
+		return vals[2];
 	}
 
 	using Cascader = std::function<double(const InteractionCount&, double, double)>;
@@ -1106,36 +1133,46 @@ struct Sample
 		clusters_total = 0;
 	}
 
-	template <typename Rng> void load_from(std::string file, Rng& rng)
+	template <typename Rng> void load_from(std::string file, Rng& rng, int vacancies)
 	{
 		std::fill(trimer_occupations.begin(), trimer_occupations.end(), false);
 		std::fill(vertex_occupations.begin(), vertex_occupations.end(), Cluster());
 
 		std::ifstream ifs(file);
+		if (ifs.fail())
+			throw "random file not found";
+
 		std::string line;
-		int target = (int)(rng() % 150) + 200;
-		int lc = 0;
+		std::vector<std::string> lines;
+		std::vector<TrimerPos> positions;
 		while (std::getline(ifs, line))
+			lines.push_back(line);
+
+		int randline = (int)(rng() % (2 * lines.size() / 3)) + (int)lines.size() / 3;
+		line = lines[randline];
+		std::istringstream ss(line);
+		std::string token;
+		while (std::getline(ss, token, ' '))
 		{
-			if (lc++ == target)
-			{
-				std::istringstream ss(line);
-				std::string token;
+			std::istringstream ss2(token.substr(1, token.length() - 2));
+			std::string token2;
+			std::vector<int> nums;
+			while (std::getline(ss2, token2, ','))
+				nums.push_back(std::stoi(token2));
 
-				while (std::getline(ss, token, ' '))
-				{
-					std::istringstream ss2(token.substr(1, token.length() - 2));
-					std::string token2;
-					std::vector<int> nums;
-					while (std::getline(ss2, token2, ','))
-						nums.push_back(std::stoi(token2));
+			positions.push_back(TrimerPos(nums[0], nums[1], nums[2]));
+		}
 
-					auto pos = TrimerPos(nums[0], nums[1], nums[2]);
-					trimer_occupations[pos.index(w)] = true;
-					for (auto& [npos, rel] : pos.get_clusters_wrel(w, h))
-						vertex_occupations[npos.index(w)].occupations |= rel.occupations;
-				}
-			}
+		if (positions.size() != (uint)(w * h / 3))
+			throw "file loading failed";
+
+		std::shuffle(positions.begin(), positions.end(), rng);
+		for (uint i = vacancies; i < positions.size(); i++)
+		{
+			const auto& pos = positions[i];
+			trimer_occupations[pos.index(w)] = true;
+			for (auto& [npos, rel] : pos.get_clusters_wrel(w, h))
+				vertex_occupations[npos.index(w)].occupations |= rel.occupations;
 		}
 
 		j4_total = -1;
@@ -1172,6 +1209,12 @@ struct Sample
 const std::array<std::array<MonomerPos, 6>, 2> Sample::j4_neighbor_list = {
 	std::array<MonomerPos, 6>{MonomerPos{0, 1}, {1, 0}, {0, -2}, {1, -2}, {-2, 0}, {-2, 1}},
 	{MonomerPos{0, 2}, {-1, 2}, {2, 0}, {2, -1}, {0, -1}, {-1, 0}}};
+const std::array<MonomerPos, 3> Sample::j6_neighbor_list = std::array<MonomerPos, 3>{MonomerPos{0, 2}, {2, 0}, {-2, 2}};
+
+template <typename T> inline void write_binary(std::ostream& o, const T& t)
+{
+	o.write(reinterpret_cast<const char*>(&t), sizeof(t));
+}
 
 struct PTWorker
 {
@@ -1188,7 +1231,7 @@ struct PTWorker
 	std::ofstream oftritri;
 	std::ofstream oforder;
 	std::ofstream ofenergy;
-	std::ofstream ofenergy2;
+	std::ofstream ofhistogram;
 	std::ofstream ofconf;
 
 	Accumulator<double> amonomono;
@@ -1210,7 +1253,7 @@ struct PTWorker
 		sample = Sample(opt.domain_length, opt.domain_length);
 
 		rng.seed(
-			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+			std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
 				.count());
 
 		sample.initialize(opt, rng);
@@ -1232,10 +1275,20 @@ struct PTWorker
 			do
 			{
 				std::stringstream ss;
-				ss << options.domain_length << "x" << options.domain_length << "_r-" << options.mono_vacancies << "_t"
-				   << std::fixed << std::setprecision(6) << temperature << "_j" << std::setprecision(3)
-				   << options.j4_over_u << "_" << options.total_steps << "." << options.decorr_interval << "_"
-				   << runid++;
+				if (options.u == 1)
+				{
+					ss << options.domain_length << "x" << options.domain_length << "_r-" << options.mono_vacancies
+					   << "_t" << std::fixed << std::setprecision(6) << temperature << "_j" << std::setprecision(3)
+					   << options.j4 << "_" << options.total_steps << "." << options.decorr_interval << "_" << runid++;
+				}
+				else
+				{
+					ss << options.domain_length << "x" << options.domain_length << "_r-" << options.mono_vacancies
+					   << "_t" << std::fixed << std::setprecision(6) << temperature << "_u" << std::setprecision(3)
+					   << options.u << "_j" << std::setprecision(3) << options.j4 << "_" << options.total_steps << "."
+					   << options.decorr_interval << "_" << runid++;
+				}
+
 				basepath = std::filesystem::path("new-data") / options.directory / ss.str();
 			} while (std::filesystem::exists(basepath));
 			std::filesystem::create_directories(basepath);
@@ -1247,12 +1300,12 @@ struct PTWorker
 			oftritri = std::ofstream(basepath / "tri-tri.dat");
 			oforder = std::ofstream(basepath / "order.dat");
 			ofenergy = std::ofstream(basepath / "energy.dat");
-			ofenergy2 = std::ofstream(basepath / "energy-single.dat");
+			ofhistogram = std::ofstream(basepath / "histogram.dat", std::ios::binary);
 			ofconf = std::ofstream(basepath / "positions.dat");
 
 			amonomono =
 				Accumulator<double>(options.domain_length * options.domain_length, options.accumulator_interval);
-			aorder = Accumulator<double>(8, options.accumulator_interval);
+			aorder = Accumulator<double>(11, options.accumulator_interval);
 			aclustercount = Accumulator<double>(7, options.accumulator_interval);
 			amonodi = Accumulator<double>(options.domain_length * options.domain_length, options.accumulator_interval);
 			atritri =
@@ -1265,8 +1318,8 @@ struct PTWorker
 	{
 		auto begin = std::chrono::high_resolution_clock::now();
 
-		double j4 = temperature > 0 ? options.j4_over_u / temperature : options.j4_over_u;
-		double u = 1 / temperature;
+		double j4 = temperature == 0 ? 0 : options.j4 / temperature;
+		double u = temperature == 0 ? infinity : options.u / temperature;
 
 		std::uniform_real_distribution<> uniform(0., 1.);
 		for (int i = 0; i < options.decorr_interval; i++)
@@ -1301,8 +1354,11 @@ struct PTWorker
 
 		if (io_initialized)
 		{
+			Sample::Observables obs;
+			double energy = 0;
+
 			if (options.out_monomono)
-				sample.record_partial_monomer_correlations(amonomono, rng, 32. / (options.mono_vacancies));
+				sample.record_partial_monomer_correlations(amonomono, rng, 32);
 			if (options.out_clustercount)
 				sample.record_cluster_count(aclustercount);
 			if (options.out_monodi)
@@ -1310,9 +1366,9 @@ struct PTWorker
 			if (options.out_tritri)
 				sample.record_partial_trimer_correlations(atritri, rng, 20. / (sample.w * sample.h / 3));
 			if (options.out_energy)
-				sample.record_energy(aenergy, options.j4_over_u);
+				energy = sample.record_energy(aenergy, options.u, options.j4);
 			if (options.out_order)
-				sample.record_order_parameters(aorder);
+				obs = sample.record_order_parameters(aorder);
 
 			auto end2 = std::chrono::high_resolution_clock::now();
 
@@ -1331,9 +1387,13 @@ struct PTWorker
 				ofconf << std::endl;
 				previous_position_output = total_steps;
 			}
-			if (options.out_energy2)
+
+			if (options.out_histogram)
 			{
-				ofenergy2 << sample.clusters_total << " " << sample.j4_total << std::endl;
+				write_binary<float>(ofhistogram, (float)energy);
+				write_binary<float>(ofhistogram, (float)obs.structure_factor_K);
+				write_binary<int32_t>(ofhistogram, obs.sublattice_polarization);
+				ofhistogram.flush();
 			}
 
 			timings[1] = (double)std::chrono::duration_cast<std::chrono::microseconds>(end2 - end1).count();
@@ -1374,7 +1434,7 @@ struct PTEnsemble
 	PTEnsemble(const Options& options) : options(options), timing(2, 1)
 	{
 		rng.seed(
-			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+			std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
 				.count());
 
 		for (uint i = 0; i < options.temperatures.size(); i++)
@@ -1432,8 +1492,8 @@ struct PTEnsemble
 			chains[i].sample.calculate_energy();
 			chains[i + 1].sample.calculate_energy();
 
-			double u_factor = chains[i].sample.clusters_total - chains[i + 1].sample.clusters_total;
-			double j4_factor = (chains[i].sample.j4_total - chains[i + 1].sample.j4_total) * options.j4_over_u;
+			double u_factor = (chains[i].sample.clusters_total - chains[i + 1].sample.clusters_total) * options.u;
+			double j4_factor = (chains[i].sample.j4_total - chains[i + 1].sample.j4_total) * options.j4;
 
 			double action;
 			if (u_factor + j4_factor == 0)
@@ -1508,7 +1568,7 @@ struct PTEnsemble
 			pt_swap();
 
 		timing.record(timings);
-		if (steps_done >= last_output + 5000)
+		if (steps_done >= last_output + 15000)
 		{
 			last_output = steps_done;
 
@@ -1558,7 +1618,7 @@ struct MuCaWorker
 		sample = Sample(opt.domain_length, opt.domain_length);
 
 		rng.seed(
-			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+			std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
 				.count());
 
 		factor = options.multicanonical_init_factor;
@@ -1628,7 +1688,7 @@ struct MuCaEnsemble
 	MuCaEnsemble(const Options& options) : options(options), timing(2, 1)
 	{
 		rng.seed(
-			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+			std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
 				.count());
 
 		std::filesystem::path basepath;
@@ -1839,7 +1899,8 @@ void sim(int argc, char** argv)
 	Options options;
 	options.domain_length = std::stoi(std::string(argv[1]));
 	options.mono_vacancies = std::stoi(std::string(argv[2])) * 3;
-	options.j4_over_u = std::stod(std::string(argv[3]));
+	options.u = 1;
+	options.j4 = std::stod(std::string(argv[3]));
 
 	std::string temperatures = std::string(argv[4]);
 	std::istringstream ss(temperatures);
@@ -1881,8 +1942,17 @@ void sim(int argc, char** argv)
 	options.out_monodi = optstring.find('d') != std::string::npos;
 	options.out_tritri = optstring.find('t') != std::string::npos;
 	options.out_energy = optstring.find('e') != std::string::npos;
-	options.out_energy2 = optstring.find('E') != std::string::npos;
 	options.out_order = optstring.find('o') != std::string::npos;
+	options.out_histogram = optstring.find('h') != std::string::npos;
+
+	if (optstring.find('I') != std::string::npos)
+		options.u = infinity;
+
+	if (options.out_histogram)
+	{
+		options.out_order = true;
+		options.out_energy = true;
+	}
 
 	options.idealbrickwall = optstring.find('B') != std::string::npos;
 	options.idealrt3 = optstring.find('3') != std::string::npos;

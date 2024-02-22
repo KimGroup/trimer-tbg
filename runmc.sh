@@ -5,6 +5,6 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --ntasks=1
 
-./pocket 48 0 1 0 10000000 20 C 16 multitest
+./pocket 36 0 1 0 20000000 20 C 16 muca
 
 wait

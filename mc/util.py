@@ -4,8 +4,19 @@ import matplotlib.patches as mpatches
 import matplotlib
 import pocket
 
+def calculate_moments(data):
+    m1 = np.mean(data)
+    m2 = np.mean(data**2)
+    # m3 = np.mean(data**3)
+    m4 = np.mean(data**4)
+
+    cm2 = m2 - m1**2
+    # cm4 = m4 - 4*m1*m3 + 6*m1**2*m2 - 3*m1**4
+    return (1, m1, m2, None, m4), (1, 0, cm2)
+
 def gen_colors(curves):
     if isinstance(curves[0], np.int64):
+        curves = sorted(list(set(curves)))
         return {curves[i]: matplotlib.colormaps["inferno"](0.8*i/(len(curves)-1) if len(curves)>1 else 1) for i in range(len(curves))}
     else:
         return {curves[i][0]: matplotlib.colormaps["inferno"](0.8*i/(len(curves)-1) if len(curves)>1 else 1) for i in range(len(curves))}
@@ -18,10 +29,13 @@ def parse_positions(l):
         pos.append((int(tokens[0]), int(tokens[1]), int(tokens[2])))
     return pos
 
-def read_positions(f, stride=1):
+def read_positions(f, stride=1, skip=0):
     pos = []
+    counter = 0
     with open(f, "r") as f:
         for index, l in enumerate(f):
+            if index < skip:
+                continue
             if index % stride == 0:
                 pos.append(parse_positions(l))
     return pos
@@ -62,7 +76,18 @@ def draw_hexalattice(ax, width, height, color=None, ls="-"):
     ax.add_collection(matplotlib.collections.LineCollection(
         [(vertices[x], vertices[y]) for x, y in lines], color=color, lw=1, ls=ls, zorder=0.5))
 
-def show_positions(ax, positions):
+def show_positions(ax, positions, type="domains", show_monomers=False, color="black"):
+    def to_rgba(hex, alpha):
+        return ((hex >> 16) / 256, ((hex >> 8) & 0xFF) / 256, (hex & 0xFF) / 256, alpha)
+
+    color1 = 0x4dab2f
+    color2 = 0xdecd2b
+    color3 = 0xf78026
+    color4 = 0xfd58f7
+    color5 = 0x9c78fa
+    color6 = 0x4db2f1
+    colors = [color1, color2, color3, color4, color5, color6]
+
     width = max(x for x, y, s in positions)+1
     height = max(y for x, y, s in positions)+1
     draw_hexalattice(ax, width, height)
@@ -74,14 +99,19 @@ def show_positions(ax, positions):
             monomers.add((i, j))
     doublons = set()
 
+    nj4 = 0
+
     patches = []
     j4lines = []
     brokenj4lines = []
+    facecolors = []
     for x, y, s in positions:
         xy = trimer_coords(x, y, s)
         patches.append(mpatches.RegularPolygon(xy, numVertices=3,
-                                            radius=1/np.sqrt(3),
+                                            radius=1.2/np.sqrt(3),
                                             orientation=s*np.pi))
+        sublattice = (4 * y + 2 * x + s) % 6
+        facecolors.append(to_rgba(colors[sublattice], 1))
         
         mono_pos = []
         if s == 0:
@@ -101,6 +131,7 @@ def show_positions(ax, positions):
             for dx, dy in [(0, 1), (1, 0), (0, -2), (1, -2), (-2, 0), (-2, 1)]:
                 if (x+dx, y+dy, 1) in positions:
                     j4lines.append([trimer_coords(x, y, 0), trimer_coords(x+dx, y+dy, 1)])
+                    nj4 += 1
             for dx, dy in [(1, 1), (1, -2), (-2, 1)]:
                 if (x+dx, y+dy, s) in positions:
                     brokenj4lines.append([trimer_coords(x, y, s), trimer_coords(x+dx, y+dy, s)])
@@ -108,6 +139,7 @@ def show_positions(ax, positions):
             for dx, dy in [(1, 1), (1, -2), (-2, 1)]:
                 if (x+dx, y+dy, s) in positions:
                     brokenj4lines.append([trimer_coords(x, y, s), trimer_coords(x+dx, y+dy, s)])
+    print(nj4)
     
     monopatches = []
     for x, y in monomers:
@@ -116,17 +148,23 @@ def show_positions(ax, positions):
     for x, y in doublons:
         doubpatches.append(mpatches.Circle(mono_coords(x, y), radius=1/np.sqrt(3)/2))
 
-    ax.add_collection(matplotlib.collections.PatchCollection(monopatches, edgecolors="black", facecolors="lime", zorder=1.5))
-    ax.add_collection(matplotlib.collections.PatchCollection(doubpatches, edgecolors="black", facecolors="red", zorder=1.5))
+    if show_monomers:
+        ax.add_collection(matplotlib.collections.PatchCollection(monopatches, edgecolors="black", facecolors="lime", zorder=1.5))
+        ax.add_collection(matplotlib.collections.PatchCollection(doubpatches, edgecolors="black", facecolors="red", zorder=1.5))
 
-    ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors="black", facecolors="black"))
-    ax.add_collection(matplotlib.collections.LineCollection(j4lines, color="dodgerblue", lw=2, ls="-", zorder=2))
-    ax.add_collection(matplotlib.collections.LineCollection(brokenj4lines, color="orchid", lw=2, ls="-", zorder=2))
+    if type == "none":
+        ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors="black", facecolors=color, zorder=1.2))
+    elif type == "domains":
+        ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors=None, facecolors=facecolors, zorder=1.2))
+    else:
+        ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors="black", facecolors=color, zorder=1.2))
+        ax.add_collection(matplotlib.collections.LineCollection(brokenj4lines, color="orchid", lw=2, ls="-", zorder=2))
+        ax.add_collection(matplotlib.collections.LineCollection(j4lines, color="dodgerblue", lw=2, ls="-", zorder=2))
 
 
     ax.axis("off")
-    ax.set_xlim([0, 30])
-    ax.set_ylim([0, 30])
+    ax.set_xlim([10, 50])
+    ax.set_ylim([10, 30])
     ax.set_aspect("equal")
 
 def read_accumulator(fname, skip=0, take=None):
@@ -139,32 +177,36 @@ def read_accumulator(fname, skip=0, take=None):
 
     skipped = 0
 
-    with open(fname) as f:
-        for index, line in enumerate(f):
-            if take is not None and n > take: break
+    try:
+        with open(fname) as f:
+            for index, line in enumerate(f):
+                if take is not None and n > take: break
 
-            if state == "count":
-                state = "val"
-                n = int(line.strip())
-            elif state == "val":
-                state = "m2"
-                if skipped >= skip:
-                    curval = np.array([float(x) for x in line.strip().split()])
-            elif state == "m2":
-                state = "count"
-                if skipped < skip:
-                    skipped += n
-                else:
-                    curm2 = np.array([float(x) for x in line.strip().split()])
-                    if mean is None:
-                        mean = curval
-                        m2 = curm2
-                        total = n
+                if state == "count":
+                    state = "val"
+                    n = int(line.strip())
+                elif state == "val":
+                    state = "m2"
+                    if skipped >= skip:
+                        curval = np.array([float(x) for x in line.strip().split()])
+                elif state == "m2":
+                    state = "count"
+                    if skipped < skip:
+                        skipped += n
                     else:
-                        delta = curval - mean
-                        mean = (total * mean + curval * n) / (total + n)
-                        m2 = m2 + curm2 + np.power(delta, 2) * n * total / (n + total)
-                        total += n
+                        curm2 = np.array([float(x) for x in line.strip().split()])
+                        if mean is None:
+                            mean = curval
+                            m2 = curm2
+                            total = n
+                        else:
+                            delta = curval - mean
+                            mean = (total * mean + curval * n) / (total + n)
+                            m2 = m2 + curm2 + np.power(delta, 2) * n * total / (n + total)
+                            total += n
+    except Exception as e:
+        print(fname)
+        raise e
 
     if m2 is None:
         raise ValueError(fname)
@@ -200,9 +242,19 @@ def get_all_data(glob, transform, filter=lambda _: True, skip=0, by="t", with_co
     ts0, ds0, ns = [], [], []
     for props in sorted(enum_files(glob), key=lambda x: x[by]):
         if not filter(props): continue
+
+        try:
+            data = read_accumulator(props["fname"], skip=skip, take=take)
+        except ValueError:
+            continue
+
+        try:
+            ds0.append(transform(data, props))
+        except IndexError as e:
+            print(e)
+            continue
+
         ts0.append(props if by == "fname" else props[by])
-        data = read_accumulator(props["fname"], skip=skip, take=take)
-        ds0.append(transform(data, props))
         ns.append(data[2])
 
     ts0 = np.array(ts0)
@@ -225,7 +277,7 @@ def get_all_cvs(glob, skip=0, take=None, by="t"):
                         np.zeros_like(data[1][2]) if props["t"] == 0 else
                         data[1][2]**2/props["t"]**2/(props["l"]**2/3 - props["r"]/3), skip=skip, take=take, by=by)
 
-def get_all_curves(globs, prop="cv", bounds=None, skip=0, take=None):
+def get_all_curves(globs, prop="cv", bounds=None, skip=0, take=None, by="l"):
     props = []
     ds = []
 
@@ -238,12 +290,20 @@ def get_all_curves(globs, prop="cv", bounds=None, skip=0, take=None):
             nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][4]/3/data[0][3]**2, skip=skip, by="fname")
         elif prop == "k":
             nprops, nds = get_all_data(glob, lambda data, props: data[0][3]/props["l"]**2, skip=skip, by="fname")
+        elif prop == "ksus":
+            nprops, nds = get_all_data(glob, lambda data, props: data[1][3]**2/props["t"]/props["l"]**2, skip=skip, by="fname")
         elif prop == "kb":
-            nprops, nds = get_all_data(glob, lambda data, props: data[0][5]/data[0][4]**2, skip=skip, by="fname")
+            nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][5]/2/data[0][4]**2, skip=skip, by="fname")
+        elif prop == "s":
+            nprops, nds = get_all_data(glob, lambda data, props: data[0][8]/props["l"]**2, skip=skip, by="fname")
+        elif prop == "ssus":
+            nprops, nds = get_all_data(glob, lambda data, props: data[1][8]**2/props["t"]/props["l"]**2, skip=skip, by="fname")
+        elif prop == "sb":
+            nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][10]/3/data[0][9]**2, skip=skip, by="fname")
         elif prop == "m":
             nprops, nds = get_all_data(glob, lambda data, props: data[0][0]/props["l"]**2, skip=skip, by="fname")
         elif prop == "mb":
-            nprops, nds = get_all_data(glob, lambda data, props: data[0][2]/data[0][1]**2, skip=skip, by="fname")
+            nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][2]/2/data[0][1]**2, skip=skip, by="fname")
         elif prop == "mono":
             nprops, nds = get_all_data(glob, lambda data, props: data[0][0]/props["l"]**2, skip=skip, by="fname")
         elif prop == "corr":
@@ -254,14 +314,14 @@ def get_all_curves(globs, prop="cv", bounds=None, skip=0, take=None):
         props += nprops.tolist()
         ds += nds.tolist()
 
-    lens = sorted(set(x["l"] for x in props))
+    lens = sorted(set(x[by] for x in props))
 
     curves = []
     for l in lens:
         ts = []
         ys = []
-        for prop, y in sorted(((prop, y) for prop, y in zip(props, ds) if prop["l"] == l), key=lambda x: x[0]["t"]):
-            if bounds is None or bounds[0] < prop["t"] < bounds[1]:
+        for prop, y in sorted(((prop, y) for prop, y in zip(props, ds) if prop[by] == l), key=lambda x: x[0]["t"]):
+            if bounds is None or bounds[0] < prop[by] < bounds[1]:
                 ts.append(prop["t"])
                 ys.append(y)
         curves.append((l, np.array(ts), np.array(ys)))
@@ -459,6 +519,7 @@ def plot_FT(ax, ft, proj="re", fold=True):
     ax.imshow(mapped.T, origin="lower", extent=(-extent, extent, -extent, extent), cmap=cmap, norm=norm)
     ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="k", alpha=0.2, lw=0.5))
     ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="k", orientation=np.pi/6, alpha=0.2, lw=0.5))
+    ax.grid(False)
     plt.colorbar(matplotlib.cm.ScalarMappable(norm, cmap=cmap), ax=ax)
 
 def plot_timeseries(ax, data, std, label=None):
