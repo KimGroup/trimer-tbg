@@ -3,19 +3,25 @@
 #SBATCH --mem-per-cpu=1G
 #SBATCH --time=2-0
 #SBATCH --cpus-per-task=1
-#SBATCH --ntasks=10
+#SBATCH --ntasks=16
 
-srun --exclusive -n 1 ./pocket 48 0 0.9 0.46 20000000 20 etcmoR 10000 vsweeps/single/0.9 &
-srun --exclusive -n 1 ./pocket 48 0 0.9 0.47 20000000 20 etcmoR 10000 vsweeps/single/0.9 &
-srun --exclusive -n 1 ./pocket 48 0 0.9 0.48 20000000 20 etcmoR 10000 vsweeps/single/0.9 &
-srun --exclusive -n 1 ./pocket 48 0 0.9 0.49 20000000 20 etcmoR 10000 vsweeps/single/0.9 &
-srun --exclusive -n 1 ./pocket 48 0 0.9 0.50 20000000 20 etcmoR 10000 vsweeps/single/0.9 &
+srun --exclusive -n 1 ./pocket 72 1 -0.01 0.03 20000000 20 emtc 10000 finite-t/j-0.01 &
+srun --exclusive -n 1 ./pocket 72 1 -0.01 0.05 20000000 20 emtc 10000 finite-t/j-0.01 &
+srun --exclusive -n 1 ./pocket 72 1 -0.01 0.07 20000000 20 emtc 10000 finite-t/j-0.01 &
+srun --exclusive -n 1 ./pocket 72 1 -0.01 0.09 20000000 20 emtc 10000 finite-t/j-0.01 &
+srun --exclusive -n 1 ./pocket 72 1 -0.01 0.11 20000000 20 emtc 10000 finite-t/j-0.01 &
+srun --exclusive -n 1 ./pocket 72 1 -0.01 0.13 20000000 20 emtc 10000 finite-t/j-0.01 &
+srun --exclusive -n 1 ./pocket 72 1 -0.01 0.15 20000000 20 emtc 10000 finite-t/j-0.01 &
+srun --exclusive -n 1 ./pocket 72 1 -0.01 0.17 20000000 20 emtc 10000 finite-t/j-0.01 &
 
-srun --exclusive -n 1 ./pocket 48 0 0.8 0.43 20000000 20 etcmoR 10000 vsweeps/single/0.8 &
-srun --exclusive -n 1 ./pocket 48 0 0.8 0.44 20000000 20 etcmoR 10000 vsweeps/single/0.8 &
-srun --exclusive -n 1 ./pocket 48 0 0.8 0.45 20000000 20 etcmoR 10000 vsweeps/single/0.8 &
-srun --exclusive -n 1 ./pocket 48 0 0.8 0.46 20000000 20 etcmoR 10000 vsweeps/single/0.8 &
-srun --exclusive -n 1 ./pocket 48 0 0.8 0.47 20000000 20 etcmoR 10000 vsweeps/single/0.8 &
+srun --exclusive -n 1 ./pocket 72 1 0.001 0.03 20000000 20 emtc 10000 finite-t/j-0.001 &
+srun --exclusive -n 1 ./pocket 72 1 0.001 0.05 20000000 20 emtc 10000 finite-t/j-0.001 &
+srun --exclusive -n 1 ./pocket 72 1 0.001 0.07 20000000 20 emtc 10000 finite-t/j-0.001 &
+srun --exclusive -n 1 ./pocket 72 1 0.001 0.09 20000000 20 emtc 10000 finite-t/j-0.001 &
+srun --exclusive -n 1 ./pocket 72 1 0.001 0.11 20000000 20 emtc 10000 finite-t/j-0.001 &
+srun --exclusive -n 1 ./pocket 72 1 0.001 0.13 20000000 20 emtc 10000 finite-t/j-0.001 &
+srun --exclusive -n 1 ./pocket 72 1 0.001 0.15 20000000 20 emtc 10000 finite-t/j-0.001 &
+srun --exclusive -n 1 ./pocket 72 1 0.001 0.17 20000000 20 emtc 10000 finite-t/j-0.001 &
 
 # srun --exclusive -n 1 ./pocket 48 16 1 3.1 20000000 20 etcmoRIE 10000 dsweeps/1.48/rand &
 

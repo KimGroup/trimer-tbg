@@ -2,7 +2,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib
-import pocket
+
+def read_histogram(fname, skip=0):
+    with open(fname, mode="rb") as f:
+        f.seek(0, 2)
+        fsize = f.tell()
+        f.seek(skip*12, 0)
+        buf = f.read(fsize - skip*12)
+        entries = len(buf) // 12
+
+        e = np.ndarray((entries,), dtype=np.single, buffer=buf, strides=(12,)).astype(np.double)
+        k = np.ndarray((entries,), dtype=np.single, buffer=buf, strides=(12,), offset=4).astype(np.double)
+        s = np.ndarray((entries,), dtype=np.int32, buffer=buf, strides=(12,), offset=8).astype(np.double)
+        return e, k, s
 
 def calculate_moments(data):
     m1 = np.mean(data)
@@ -15,7 +27,7 @@ def calculate_moments(data):
     return (1, m1, m2, None, m4), (1, 0, cm2)
 
 def gen_colors(curves):
-    if isinstance(curves[0], np.int64):
+    if not isinstance(curves[0], tuple):
         curves = sorted(list(set(curves)))
         return {curves[i]: matplotlib.colormaps["inferno"](0.8*i/(len(curves)-1) if len(curves)>1 else 1) for i in range(len(curves))}
     else:
@@ -236,7 +248,9 @@ def enum_files(dir):
     for fname in glob.glob(dir):
         basename = fname.split("/")[-2]
         tokens = basename.split("_")
-        yield { "fname": fname, "l": int(tokens[0].split("x")[0]), "r": int(tokens[1][1:]), "t": float(tokens[2][1:]), "j4": float(tokens[3][1:]) }
+        l = int(tokens[0].split("x")[0])
+        r = int(tokens[1][1:])
+        yield { "fname": fname, "l": l, "r": r, "n": (l**2-r)//3, "t": float(tokens[2][1:]), "j4": float(tokens[3][1:]) }
 
 def get_all_data(glob, transform, filter=lambda _: True, skip=0, by="t", with_counts=False, take=None):
     ts0, ds0, ns = [], [], []
@@ -289,23 +303,23 @@ def get_all_curves(globs, prop="cv", bounds=None, skip=0, take=None, by="l"):
         elif prop == "eb":
             nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][4]/3/data[0][3]**2, skip=skip, by="fname")
         elif prop == "k":
-            nprops, nds = get_all_data(glob, lambda data, props: data[0][3]/props["l"]**2, skip=skip, by="fname")
+            nprops, nds = get_all_data(glob, lambda data, props: data[0][3]/props["n"], skip=skip, by="fname")
         elif prop == "ksus":
-            nprops, nds = get_all_data(glob, lambda data, props: data[1][3]**2/props["t"]/props["l"]**2, skip=skip, by="fname")
+            nprops, nds = get_all_data(glob, lambda data, props: data[1][3]**2/props["t"]/props["n"], skip=skip, by="fname")
         elif prop == "kb":
             nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][5]/2/data[0][4]**2, skip=skip, by="fname")
         elif prop == "s":
-            nprops, nds = get_all_data(glob, lambda data, props: data[0][8]/props["l"]**2, skip=skip, by="fname")
+            nprops, nds = get_all_data(glob, lambda data, props: data[0][8]/props["n"], skip=skip, by="fname")
         elif prop == "ssus":
-            nprops, nds = get_all_data(glob, lambda data, props: data[1][8]**2/props["t"]/props["l"]**2, skip=skip, by="fname")
+            nprops, nds = get_all_data(glob, lambda data, props: data[1][8]**2/props["t"]/props["n"], skip=skip, by="fname")
         elif prop == "sb":
             nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][10]/3/data[0][9]**2, skip=skip, by="fname")
         elif prop == "m":
-            nprops, nds = get_all_data(glob, lambda data, props: data[0][0]/props["l"]**2, skip=skip, by="fname")
+            nprops, nds = get_all_data(glob, lambda data, props: data[0][0]/props["n"], skip=skip, by="fname")
         elif prop == "mb":
             nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][2]/2/data[0][1]**2, skip=skip, by="fname")
         elif prop == "mono":
-            nprops, nds = get_all_data(glob, lambda data, props: data[0][0]/props["l"]**2, skip=skip, by="fname")
+            nprops, nds = get_all_data(glob, lambda data, props: data[0][0]/props["n"], skip=skip, by="fname")
         elif prop == "corr":
             nprops, nds = get_all_data(glob, lambda data, props: (1/2)*np.sqrt(data[0][3]/data[0][6] - 1), skip=skip, by="fname")
         elif prop == "corr2":
