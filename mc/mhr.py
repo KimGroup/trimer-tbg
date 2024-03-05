@@ -81,6 +81,8 @@ def get_runs(glob):
             "l": f["l"],
             "t": f["t"],
             "e": e,
+            "mean_e": e.mean(),
+            "std_e": e.std(),
             "tau_e": autocorr_gw2010(e[None, :10_000]),
             "k": k,
             "tau_k": autocorr_gw2010(k[None, :10_000]),
@@ -105,10 +107,25 @@ def reweighted_observable(t, f, o, fs, runs, stride=1):
     total = 0
     for runi in runs:
         e = runi["e"][::stride]
+        mean_e = runi["mean_e"]
+        std_e = runi["std_e"]
+
         denom = np.zeros(len(e))
         for fj, runj in zip(padded_fs, runs):
+            beta_diff = 1/runj['t'] - 1/t
+            if beta_diff < 0:
+                largest_term = -beta_diff * (mean_e + std_e)
+            else:
+                largest_term = -beta_diff * (mean_e - std_e)
+
+            if largest_term - (fj - f) > 150:
+                denom[:] = np.inf
+                break
+            elif largest_term - (fj - f) < -150:
+                continue
+
             # denom += (len(runj["e"]) * runj["g_inv"]) * np.exp(-(1/runj["t"] - 1/t) * runi["e"] - (fj + f))
-            denom += ne.evaluate(f"{len(runj['e'][::stride]) * runj['g_inv']} * exp(-({1/runj['t']} - {1/t}) * e - {fj - f})")
+            denom += ne.evaluate(f"{len(runj['e'][::stride]) * runj['g_inv']} * exp(-({beta_diff}) * e - {fj - f})")
 
         if callable(o):
             coef = o(runi)
@@ -119,32 +136,37 @@ def reweighted_observable(t, f, o, fs, runs, stride=1):
 
     return total
 
-def fun(fs, runs):
-    totals = []
-    for f, run in zip(fs, runs[1:]):
-        totals.append(reweighted_observable(run["t"], f, 1, fs, runs) - 1)
-    return totals
-
 def fun_scalar(f, runs):
     if len(runs) != 2:
         raise ValueError()
     return reweighted_observable(runs[1]["t"], f, 1, [f], runs) - 1
 
-def iterate(fs, runs, stride=1):
-    totals = []
-    for run in runs[1:]:
-        totals.append(np.log(reweighted_observable(run["t"], 0, 1, fs, runs, stride=stride)))
-    return totals
-
-def eval(fs, runs):
-    return np.amax(np.abs(fun(fs, runs)))
-
 def init_guess(runs):
     rough_f = np.array([r["e"].mean()/r["t"] for r in runs])
     rough_f2 = [0]
-    for i in range(len(runs)-2):
+    for i in range(len(runs)-1):
         guess = rough_f[i+1] - rough_f[i]
         root = scipy.optimize.brentq(fun_scalar, a=guess-5000, b=guess+5000, args=runs[i:i+2])
         rough_f2.append(root + rough_f2[-1])
-    rough_f2 = rough_f2[1:]
-    return rough_f2
+    return np.array(rough_f2)[1:]
+
+def _del2(p0, p1, d):
+    return p0 - np.square(p1 - p0) / d
+
+def _relerr(actual, desired):
+    return np.max(np.abs((actual - desired) / desired))
+
+def iterate(fs, runs, stride=1):
+    totals = []
+    for f, run in zip(fs, runs[1:]):
+        totals.append(f + np.log(reweighted_observable(run["t"], f, 1, fs, runs, stride=stride)))
+    totals = np.array(totals)
+    return totals, _relerr(totals, fs)
+
+def iterate_del2(x0, runs):
+    x1, _ = iterate(x0, runs)
+    x2, _ = iterate(x1, runs)
+    d = x2 - 2.0 * x1 + x0
+    p = scipy._lib._util._lazywhere(d != 0, (x0, x1, d), f=_del2, fillvalue=x2)
+    err = _relerr(p, x0)
+    return p, err

@@ -55,5 +55,13 @@
         "complex": "cpp",
         "thread": "cpp"
     },
-    "C_Cpp.vcFormat.indent.accessSpecifiers": true
+    "C_Cpp.vcFormat.indent.accessSpecifiers": true,
+    "jupyter.debugJustMyCode": false,
+    "files.watcherExclude": {
+        "**/.git/**": true,
+        "**/node_modules/**": true,
+        "**/data/**": true,
+        "**/new-data/**": true,
+        "**/*.dat": true
+      }
 }

@@ -6,43 +6,40 @@ import os
 
 glob = sys.argv[1]
 runs = mhr.get_runs(glob)
-data = {}
+data = None
 
 nsample = int(sys.argv[3])
 order_param = sys.argv[4]
 
-if os.path.exists(sys.argv[2]):
-    with open(sys.argv[2], "rb") as f:
+try:
+    with open(sys.argv[2], "r") as f:
         pkl = json.load(f)
         data = pkl
-else:
-    data["f"] = mhr.init_guess(runs)
+except:
+    pass
 
-    for i in range(100):
-        data["f"] = mhr.iterate(data["f"], runs, stride=1000)
-    for i in range(10):
-        data["f"] = mhr.iterate(data["f"], runs, stride=10)
+if data is None:
+    data = {"f": mhr.init_guess(runs)}
 
     best_loss = 1
     while best_loss > 1e-6:
-        for i in range(5):
-            data["f"] = mhr.iterate(data["f"], runs, stride=1)
+        for i in range(3):
+            data["f"], err = mhr.iterate(data["f"], runs)
+        data["f"] = data["f"].tolist()
+        print(sys.argv[2], "Current loss: ", err, flush=True)
 
-        cur_loss = mhr.eval(data["f"], runs)
-        print(sys.argv[2], "Current loss: ", cur_loss, flush=True)
-
-        with open(sys.argv[2], "wb") as f:
+        with open(sys.argv[2], "w") as f:
             json.dump(data, f)
 
-        if cur_loss < best_loss * 0.985:
-            best_loss = cur_loss
+        if err < best_loss * 0.98:
+            best_loss = err
         else:
             break
 
 print(sys.argv[2], "Interp", flush=True)
 
-lo = runs[0]["t"] - 2*(runs[1]["t"] - runs[0]["t"])
-hi = runs[-1]["t"] + 2*(runs[-1]["t"] - runs[-2]["t"])
+lo = runs[0]["t"] - 0*(runs[1]["t"] - runs[0]["t"])
+hi = runs[-1]["t"] + 0*(runs[-1]["t"] - runs[-2]["t"])
 xs = np.linspace(lo, hi, nsample)
 
 for k in ["t", "e", "cv", "b_e", "k", "chi_k", "b_k", "s", "chi_s", "b_s"]:
@@ -50,7 +47,8 @@ for k in ["t", "e", "cv", "b_e", "k", "chi_k", "b_k", "s", "chi_s", "b_s"]:
 
 for index, t in enumerate(xs):
     n = runs[0]["n"]
-    f = np.log(mhr.reweighted_observable(t, 0, 1, data["f"], runs))
+    f0 = np.interp(t, [r["t"] for r in runs], np.concatenate(([0], data["f"])))
+    f = f0 + np.log(mhr.reweighted_observable(t, f0, 1, data["f"], runs))
 
     e = mhr.reweighted_observable(t, f, lambda run: run["e"], data["f"], runs)
     ce2 = mhr.reweighted_observable(t, f, lambda run: (run["e"]-e)**2, data["f"], runs)

@@ -16,6 +16,29 @@ def read_histogram(fname, skip=0):
         s = np.ndarray((entries,), dtype=np.int32, buffer=buf, strides=(12,), offset=8).astype(np.double)
         return e, k, s
 
+def read_histogram_winding(fname, skip=0):
+    with open(fname, mode="rb") as f:
+        f.seek(0, 2)
+        fsize = f.tell()
+        f.seek(skip*22, 0)
+        buf = f.read(fsize - skip*22)
+        entries = len(buf) // 22
+
+        e = np.ndarray((entries,), dtype=np.single, buffer=buf, strides=(22,)).astype(np.double)
+        w = np.ndarray((entries,9), dtype=np.short, buffer=buf, strides=(22,2), offset=4).astype(np.double)
+        return e, w
+
+def read_histogram_winding_dimer(fname, skip=0):
+    with open(fname, mode="rb") as f:
+        f.seek(0, 2)
+        fsize = f.tell()
+        f.seek(skip*4, 0)
+        buf = f.read(fsize - skip*4)
+        entries = len(buf) // 4
+
+        w = np.ndarray((entries,2), dtype=np.short, buffer=buf, strides=(4,2), offset=0).astype(np.double)
+        return w
+
 def calculate_moments(data):
     m1 = np.mean(data)
     m2 = np.mean(data**2)
@@ -173,6 +196,22 @@ def show_positions(ax, positions, type="domains", show_monomers=False, color="bl
         ax.add_collection(matplotlib.collections.LineCollection(brokenj4lines, color="orchid", lw=2, ls="-", zorder=2))
         ax.add_collection(matplotlib.collections.LineCollection(j4lines, color="dodgerblue", lw=2, ls="-", zorder=2))
 
+
+    ax.axis("off")
+    ax.set_xlim([10, 50])
+    ax.set_ylim([10, 30])
+    ax.set_aspect("equal")
+
+def show_positions_dimer(ax, positions):
+    positions = set(positions)
+
+    lines = []
+    for x, y, s in positions:
+        if s == 0:
+            lines.append([(x, y), (x+1, y)])
+        else:
+            lines.append([(x, y), (x, y+1)])
+    ax.add_collection(matplotlib.collections.LineCollection(lines, color="black", lw=2, ls="-", zorder=2))
 
     ax.axis("off")
     ax.set_xlim([10, 50])
