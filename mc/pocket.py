@@ -323,7 +323,7 @@ def enumerate_tilings():
 
             # match vertical PBC
             if mask_above(dfs[-1][1]) == init_mask:
-                yield [row for shape, row in dfs]
+                yield rowspace_to_trimers([row for shape, row in dfs])
             
             dfs[-1] = (dfs[-1][0], advance(dfs[-1][0], dfs[-1][1]))
 

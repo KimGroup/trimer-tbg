@@ -98,7 +98,7 @@ struct TrimerPos;
 
 struct Cluster
 {
-	uint8_t occupations = 0;
+	uint8_t mask = 0;
 	static Cluster relative(int dx, int dy, int s)
 	{
 		if (dx != 0)
@@ -110,9 +110,9 @@ struct Cluster
 	}
 
 	Cluster() {}
-	Cluster(uint8_t occupations) : occupations(occupations) {}
+	Cluster(uint8_t mask) : mask(mask) {}
 
-	bool operator==(const Cluster& other) const { return occupations == other.occupations; }
+	bool operator==(const Cluster& other) const { return mask == other.mask; }
 };
 
 struct TrimerPos
@@ -261,12 +261,16 @@ struct TrimerPos
 	bool operator==(const TrimerPos& other) const { return x == other.x && y == other.y && s == other.s; }
 };
 
+const std::array<TrimerPos, 6> plaquette_trimers = {
+    TrimerPos{0, 0, 0}, {-1, 0, 1}, {-1, 0, 0},
+	{-1, -1, 1}, {0, -1, 0}, {0, -1, 1}
+};
+
 struct InteractionCount
 {
 	int u = 0;
 	int j4 = 0;
-
-	bool operator==(const InteractionCount& other) const { return j4 == other.j4 && u == other.u; }
+	int hard_core = 0;
 };
 
 namespace std
@@ -444,34 +448,39 @@ struct Sample
   public:
 	static const std::array<std::array<MonomerPos, 6>, 2> j4_neighbor_list;
 	static const std::array<MonomerPos, 3> j6_neighbor_list;
-
 	int32_t w, h;
-	std::vector<bool> trimer_occupations;
-	std::vector<Cluster> vertex_occupations;
-	int j4_total, clusters_total;
+
+	struct Configuration
+	{
+		std::vector<bool> trimer_occ;
+		std::vector<Cluster> vertex_occ;
+		int j4_total, clusters_total;
+	};
+
+	Configuration cfg;
 
 	Sample() : w(0), h(0)
 	{
-		j4_total = 0;
-		clusters_total = 0;
+		cfg.j4_total = 0;
+		cfg.clusters_total = 0;
 	}
 
 	Sample(int32_t w, int32_t h) : w(w), h(h)
 	{
-		trimer_occupations = std::vector<bool>(w * h * 2, false);
-		vertex_occupations = std::vector<Cluster>(w * h);
-		j4_total = 0;
-		clusters_total = 0;
+		cfg.trimer_occ = std::vector<bool>(w * h * 2, false);
+		cfg.vertex_occ = std::vector<Cluster>(w * h);
+		cfg.j4_total = 0;
+		cfg.clusters_total = 0;
 	}
 
 	Sample(int32_t w, int32_t h, const std::vector<TrimerPos>& trimers) : w(w), h(h)
 	{
-		trimer_occupations = std::vector<bool>(w * h * 2, false);
+		cfg.trimer_occ = std::vector<bool>(w * h * 2, false);
 		for (auto& i : trimers)
-			trimer_occupations[i.index(w)] = true;
+			cfg.trimer_occ[i.index(w)] = true;
 
-		j4_total = -1;
-		clusters_total = -1;
+		cfg.j4_total = -1;
+		cfg.clusters_total = -1;
 
 		regenerate_occupation();
 		calculate_energy();
@@ -501,36 +510,36 @@ struct Sample
 
 	void regenerate_occupation()
 	{
-		vertex_occupations = std::vector<Cluster>(w * h);
+		cfg.vertex_occ = std::vector<Cluster>(w * h);
 
-		for (uint i = 0; i < trimer_occupations.size(); i++)
+		for (uint i = 0; i < cfg.trimer_occ.size(); i++)
 		{
-			if (trimer_occupations[i])
+			if (cfg.trimer_occ[i])
 			{
 				auto tri = TrimerPos::from_index(i, w);
 
 				for (auto& [occ, rel] : tri.get_clusters_wrel(w, h))
-					vertex_occupations[occ.index(w)].occupations |= rel.occupations;
+					cfg.vertex_occ[occ.index(w)].mask |= rel.mask;
 			}
 		}
 	}
 
 	void calculate_energy()
 	{
-		if (clusters_total >= 0 && j4_total >= 0)
+		if (cfg.clusters_total >= 0 && cfg.j4_total >= 0)
 			return;
 
-		clusters_total = 0;
-		j4_total = 0;
+		cfg.clusters_total = 0;
+		cfg.j4_total = 0;
 
 #ifdef TEST
 		int total_occ = 0;
-		for (const auto& occ : vertex_occupations)
+		for (const auto& occ : cfg.vertex_occ)
 		{
-			auto popc = __builtin_popcount(occ.occupations);
+			auto popc = __builtin_popcount(occ.mask);
 			total_occ += popc;
 		}
-		for (auto i : trimer_occupations)
+		for (auto i : cfg.trimer_occ)
 		{
 			if (i)
 				total_occ -= 3;
@@ -538,20 +547,20 @@ struct Sample
 		ASSERT(total_occ == 0);
 #endif
 
-		for (const auto& occ : vertex_occupations)
+		for (const auto& occ : cfg.vertex_occ)
 		{
-			auto popc = __builtin_popcount(occ.occupations);
-			clusters_total += popc * (popc - 1) / 2;
+			auto popc = __builtin_popcount(occ.mask);
+			cfg.clusters_total += popc * (popc - 1) / 2;
 		}
 
 		for (int x = 0; x < w; x++)
 		{
 			for (int y = 0; y < h; y++)
 			{
-				if (trimer_occupations[TrimerPos(x, y, 0).index(w)])
+				if (cfg.trimer_occ[TrimerPos(x, y, 0).index(w)])
 					for (auto& rel : j4_neighbor_list[0])
-						if (trimer_occupations[TrimerPos(x + rel.x, y + rel.y, 1).canonical(w, h).index(w)])
-							j4_total++;
+						if (cfg.trimer_occ[TrimerPos(x + rel.x, y + rel.y, 1).canonical(w, h).index(w)])
+							cfg.j4_total++;
 			}
 		}
 	}
@@ -561,9 +570,9 @@ struct Sample
 		int total = 0;
 		int found = 0;
 
-		for (uint i = 0; i < trimer_occupations.size(); i++)
+		for (uint i = 0; i < cfg.trimer_occ.size(); i++)
 		{
-			if (trimer_occupations[i])
+			if (cfg.trimer_occ[i])
 			{
 				TrimerPos p1 = TrimerPos::from_index(i, w);
 				TrimerPos n;
@@ -578,7 +587,7 @@ struct Sample
 					n = TrimerPos(p1.x + d.x, p1.y + d.y, d.s);
 				}
 
-				if (trimer_occupations[n.canonical(w, h).index(w)])
+				if (cfg.trimer_occ[n.canonical(w, h).index(w)])
 					found++;
 				total++;
 			}
@@ -598,9 +607,9 @@ struct Sample
 
 		const std::array<MonomerPos, 3> neighbors = {MonomerPos{1, 0}, {0, 1}, {-1, 1}};
 
-		for (uint i = 0; i < vertex_occupations.size(); i++)
+		for (uint i = 0; i < cfg.vertex_occ.size(); i++)
 		{
-			if (vertex_occupations[i].occupations != 0)
+			if (cfg.vertex_occ[i].mask != 0)
 				continue;
 
 			bool connected = false;
@@ -608,7 +617,7 @@ struct Sample
 			for (int r = 0; r < 3; r++)
 			{
 				auto neighbor = (pos + neighbors[r]).canonical(w, h);
-				if (vertex_occupations[neighbor.index(w)].occupations == 0)
+				if (cfg.vertex_occ[neighbor.index(w)].mask == 0)
 				{
 					dimers.push_back(std::make_pair(pos, r));
 					isolated_monos.erase(neighbor);
@@ -638,11 +647,11 @@ struct Sample
 	void record_trimer_correlations(Accumulator<double>& a) const
 	{
 		std::vector<double> vals(w * h * 2);
-		for (uint i = 0; i < trimer_occupations.size(); i++)
+		for (uint i = 0; i < cfg.trimer_occ.size(); i++)
 		{
-			if (trimer_occupations[i])
-				for (uint j = i + 1; j < trimer_occupations.size(); j++)
-					if (trimer_occupations[j])
+			if (cfg.trimer_occ[i])
+				for (uint j = i + 1; j < cfg.trimer_occ.size(); j++)
+					if (cfg.trimer_occ[j])
 					{
 						auto p1 = TrimerPos::from_index(i, w);
 						auto p2 = TrimerPos::from_index(j, w);
@@ -684,9 +693,9 @@ struct Sample
 
 		int AmB = 0;
 
-		for (int i = 0; i < (int)trimer_occupations.size(); i++)
+		for (int i = 0; i < (int)cfg.trimer_occ.size(); i++)
 		{
-			if (trimer_occupations[i])
+			if (cfg.trimer_occ[i])
 			{
 				auto pos = TrimerPos::from_index(i, w);
 				if (!_ft_contributions.contains(i))
@@ -753,13 +762,13 @@ struct Sample
 		std::uniform_real_distribution<> uniform(0., 1.);
 
 		int seen = 0;
-		for (uint i = 0; i < trimer_occupations.size(); i++)
+		for (uint i = 0; i < cfg.trimer_occ.size(); i++)
 		{
-			if (trimer_occupations[i] && uniform(rng) <= fraction)
+			if (cfg.trimer_occ[i] && uniform(rng) <= fraction)
 			{
 				seen++;
-				for (uint j = 0; j < trimer_occupations.size(); j++)
-					if (trimer_occupations[j])
+				for (uint j = 0; j < cfg.trimer_occ.size(); j++)
+					if (cfg.trimer_occ[j])
 					{
 						if (j == i)
 							continue;
@@ -793,8 +802,8 @@ struct Sample
 		std::vector<double> vals(w * h);
 		std::vector<MonomerPos> pos;
 
-		for (uint i = 0; i < vertex_occupations.size(); i++)
-			if (vertex_occupations[i].occupations == 0)
+		for (uint i = 0; i < cfg.vertex_occ.size(); i++)
+			if (cfg.vertex_occ[i].mask == 0)
 				pos.push_back(MonomerPos::from_index(i, w));
 
 		std::shuffle(pos.begin(), pos.end(), rng);
@@ -825,8 +834,8 @@ struct Sample
 		std::vector<double> vals(w * h);
 		std::vector<MonomerPos> pos;
 
-		for (uint i = 0; i < vertex_occupations.size(); i++)
-			if (vertex_occupations[i].occupations == 0)
+		for (uint i = 0; i < cfg.vertex_occ.size(); i++)
+			if (cfg.vertex_occ[i].mask == 0)
 				pos.push_back(MonomerPos::from_index(i, w));
 
 		for (uint i = 0; i < pos.size(); i++)
@@ -850,8 +859,8 @@ struct Sample
 	{
 		std::vector<double> vals(7);
 
-		for (uint i = 0; i < vertex_occupations.size(); i++)
-			vals[__builtin_popcount(vertex_occupations[i].occupations)]++;
+		for (uint i = 0; i < cfg.vertex_occ.size(); i++)
+			vals[__builtin_popcount(cfg.vertex_occ[i].mask)]++;
 
 		a.record(vals);
 	}
@@ -861,13 +870,13 @@ struct Sample
 		std::vector<double> vals(5);
 		calculate_energy();
 
-		vals[0] = clusters_total;
-		vals[1] = j4_total;
+		vals[0] = cfg.clusters_total;
+		vals[1] = cfg.j4_total;
 
 		if (u < infinity)
-			vals[2] = clusters_total * u + j4_total * j4;
+			vals[2] = cfg.clusters_total * u + cfg.j4_total * j4;
 		else
-			vals[2] = j4_total * j4;
+			vals[2] = cfg.j4_total * j4;
 
 		vals[3] = vals[2] * vals[2];
 		vals[4] = vals[3] * vals[3];
@@ -884,7 +893,7 @@ struct Sample
 
 		while (true)
 		{
-			if (trimer_occupations[cpos.index(w)])
+			if (cfg.trimer_occ[cpos.index(w)])
 				tot++;
 
 			switch (dir % 3)
@@ -940,15 +949,15 @@ struct Sample
 		TrimerPos seed(0, 0, 2);
 		while (seed.s == 2)
 		{
-			uint candidate = (uint)(rng() % trimer_occupations.size());
+			uint candidate = (uint)(rng() % cfg.trimer_occ.size());
 
 			symc = MonomerPos((int)(rng() % w), (int)(rng() % h));
 			syma = (int)(rng() % 24);
 
-			if (trimer_occupations[candidate])
+			if (cfg.trimer_occ[candidate])
 			{
 				seed = TrimerPos::from_index(candidate, w);
-				if (trimer_occupations[seed.apply_symmetry(symc, syma, w, h).index(w)] && !symmetry_is_involute)
+				if (symmetry_is_involute && cfg.trimer_occ[seed.apply_symmetry(symc, syma, w, h).index(w)])
 					seed = TrimerPos(0, 0, 2);
 			}
 		}
@@ -961,11 +970,11 @@ struct Sample
 
 		_pocket.push_back(seed);
 
-		trimer_occupations[seed.index(w)] = false;
+		cfg.trimer_occ[seed.index(w)] = false;
 		for (auto& [i, occ] : seed.get_clusters_wrel(w, h))
 		{
-			ASSERT((vertex_occupations[i.index(w)].occupations & occ.occupations) != 0)
-			vertex_occupations[i.index(w)].occupations &= (uint8_t)~occ.occupations;
+			ASSERT((cfg.vertex_occ[i.index(w)].mask & occ.mask) != 0)
+			cfg.vertex_occ[i.index(w)].mask &= (uint8_t)~occ.mask;
 		}
 
 		while (_pocket.size() > 0)
@@ -978,42 +987,40 @@ struct Sample
 
 			_candidates.clear();
 
+			// hard-core constraint
+			if (cfg.trimer_occ[moved.index(w)])
+				_candidates[moved].hard_core++;
+
 			// add target overlaps to candidates
 			for (const auto& [i, rel] : moved.get_clusters_wrel(w, h))
 			{
 				_Abar_entries.push_back(std::make_pair(i, rel));
-				auto target_occ = vertex_occupations[i.index(w)].occupations;
+				auto target_occ = cfg.vertex_occ[i.index(w)].mask;
 
 				if (target_occ > 0 && u != 0)
-				{
-					for (int dx = -1; dx <= 0; dx++)
-						for (int dy = -1; dy <= 0; dy++)
-							for (int s = 0; s < 2; s++)
-								if ((target_occ & Cluster::relative(dx, dy, s).occupations) != 0)
-								{
-									auto overlap = TrimerPos(i.x + dx, i.y + dy, s).canonical(w, h);
-									_candidates[overlap].u++;
-								}
-				}
+					for (const auto& d : plaquette_trimers)
+						if ((target_occ & Cluster::relative(d.x, d.y, d.s).mask) != 0)
+						{
+							auto overlap = TrimerPos(i.x + d.x, i.y + d.y, d.s).canonical(w, h);
+							_candidates[overlap].u++;
+						}
 			}
 
 			// add source overlaps to candidates
 			if (u != 0 && u < infinity)
 				for (auto& [i, rel] : el.get_clusters_wrel(w, h))
 				{
-					auto orig_occ = vertex_occupations[i.index(w)].occupations;
+					auto orig_occ = cfg.vertex_occ[i.index(w)].mask;
 
 #if DTEST
 					ASSERT(orig_occ != 0)
 #endif
-					for (int dx = -1; dx <= 0; dx++)
-						for (int dy = -1; dy <= 0; dy++)
-							for (int s = 0; s < 2; s++)
-								if ((orig_occ & Cluster::relative(dx, dy, s).occupations) != 0)
-								{
-									auto overlap = TrimerPos(i.x + dx, i.y + dy, s).canonical(w, h);
-									_candidates[overlap].u--;
-								}
+					for (const auto& d : plaquette_trimers)
+						if ((orig_occ & Cluster::relative(d.x, d.y, d.s).mask) != 0)
+						{
+							auto overlap = TrimerPos(i.x + d.x, i.y + d.y, d.s).canonical(w, h);
+							_candidates[overlap].u--;
+						}
 				}
 
 			if (j4 != 0)
@@ -1021,14 +1028,14 @@ struct Sample
 				for (auto& d : j4_neighbor_list[el.s])
 				{
 					auto pos = TrimerPos(el.x + d.x, el.y + d.y, 1 - el.s).canonical(w, h);
-					if (trimer_occupations[pos.index(w)])
+					if (cfg.trimer_occ[pos.index(w)])
 						_candidates[pos].j4--;
 				}
 
 				for (auto& d : j4_neighbor_list[moved.s])
 				{
 					auto pos = TrimerPos(moved.x + d.x, moved.y + d.y, 1 - moved.s).canonical(w, h);
-					if (trimer_occupations[pos.index(w)])
+					if (cfg.trimer_occ[pos.index(w)])
 						_candidates[pos].j4++;
 				}
 			}
@@ -1040,17 +1047,17 @@ struct Sample
 
 				double p_cascade = 1 - std::exp(-(u_factor + j4_factor));
 
+				if (interactions.hard_core > 0)
+					p_cascade = 1;
+
 				if (p_cascade > 0 && (p_cascade >= 1 || uniform(rng) < p_cascade))
 				{
-					if (trimer_occupations[pos.apply_symmetry(symc, syma, w, h).index(w)] == false || !symmetry_is_involute)
+					_pocket.push_back(pos);
+					cfg.trimer_occ[pos.index(w)] = false;
+					for (auto& [cluster, rel] : pos.get_clusters_wrel(w, h))
 					{
-						_pocket.push_back(pos);
-						trimer_occupations[pos.index(w)] = false;
-						for (auto& [cluster, rel] : pos.get_clusters_wrel(w, h))
-						{
-							ASSERT((vertex_occupations[cluster.index(w)].occupations & rel.occupations) != 0)
-							vertex_occupations[cluster.index(w)].occupations &= (uint8_t)~rel.occupations;
-						}
+						ASSERT((cfg.vertex_occ[cluster.index(w)].mask & rel.mask) != 0)
+						cfg.vertex_occ[cluster.index(w)].mask &= (uint8_t)~rel.mask;
 					}
 				}
 			}
@@ -1058,30 +1065,44 @@ struct Sample
 
 		for (auto& i : _Abar)
 		{
-			ASSERT(trimer_occupations[i.index(w)] == false)
-			trimer_occupations[i.index(w)] = true;
+			ASSERT(cfg.trimer_occ[i.index(w)] == false)
+			cfg.trimer_occ[i.index(w)] = true;
 		}
 
 		for (auto& [vertex, occ] : _Abar_entries)
 		{
-			ASSERT((vertex_occupations[vertex.index(w)].occupations & occ.occupations) == 0)
-			vertex_occupations[vertex.index(w)].occupations |= occ.occupations;
+			ASSERT((cfg.vertex_occ[vertex.index(w)].mask & occ.mask) == 0)
+			cfg.vertex_occ[vertex.index(w)].mask |= occ.mask;
 		}
 
 #ifdef TEST
-		auto occupations = vertex_occupations;
+		auto occupations = cfg.vertex_occ;
 		regenerate_occupation();
-		ASSERT(occupations == vertex_occupations)
+		ASSERT(occupations == cfg.vertex_occ)
 #endif
 
 		// mark dirty
-		j4_total = -1;
-		clusters_total = -1;
+		cfg.j4_total = -1;
+		cfg.clusters_total = -1;
 	}
 
-	MonomerPos worm_flip(const MonomerPos& in)
+	void worm_flip(MonomerPos& pos, TrimerPos& temp, int direction)
 	{
-		return MonomerPos();
+		const std::array<MonomerPos, 6> mono_flips = {
+			MonomerPos{1, 1}, {-1, 2}, {-2, 1}, {-1, -1}, {1, -2}, {2, -1}
+		};
+		const std::array<TrimerPos, 6> tri_flips = {
+			TrimerPos{0, 0, 1}, {-1, 1, 0}, {-2, 0, 1},
+			{-1, -1, 0}, {0, -2, 1}, {1, -1, 0}
+		};
+
+		const TrimerPos& dr1 = plaquette_trimers[direction];
+		const TrimerPos& dr2 = tri_flips[direction];
+
+		TrimerPos oldpos = TrimerPos(pos.x + dr1.x, pos.y + dr1.y, dr1.s).canonical(w, h);
+		TrimerPos newpos = TrimerPos(pos.x + dr2.x, pos.y + dr2.y, dr2.s).canonical(w, h);
+
+
 	}
 
 	template <typename Rng> void worm_move(Rng& rng, double u)
@@ -1089,20 +1110,49 @@ struct Sample
 		TrimerPos seed(0, 0, 2);
 		while (seed.s == 2)
 		{
-			uint candidate = (uint)(rng() % trimer_occupations.size());
-			if (trimer_occupations[candidate])
+			uint candidate = (uint)(rng() % cfg.trimer_occ.size());
+			if (cfg.trimer_occ[candidate])
 				seed = TrimerPos::from_index(candidate, w);
 		}
 
-#ifdef TEST
-		auto occupations = vertex_occupations;
-		regenerate_occupation();
-		ASSERT(occupations == vertex_occupations)
-#endif
+		int direction = -1;
+		MonomerPos pos;
 
-		// mark dirty
-		j4_total = -1;
-		clusters_total = -1;
+		vertex_occupations[pos]
+
+		while (true)
+		{
+			const auto& d = plaquette_trimers[pos];
+			auto& mask = cfg.vertex_occ[pos.index(w)].mask;
+			int offset = (int)(rng() % 6);
+
+			TrimerPos diff;
+			for (int i = 0; i < plaquette_trimers.size(); i++)
+			{
+				int ni = (i + offset) % 6;
+				const auto& nd = plaquette_trimers[ni];
+				if (cfg.vertex_occ.mask & Cluster::relative(d.x, d.y, d.s).mask)
+				{
+					direction = ni;
+					diff = nd;
+					break;
+				}
+			}
+		}
+
+#ifdef TEST
+		int oldj4 = cfg.j4_total;
+		int oldcluster = cfg.clusters_total;
+		cfg.j4_total = -1;
+		cfg.clusters_total = -1;
+		calculate_energy();
+		ASSERT(cfg.j4_total == oldj4)
+		ASSERT(cfg.clusters_total == oldcluster)
+
+		auto occupations = cfg.vertex_occ;
+		regenerate_occupation();
+		ASSERT(occupations == cfg.vertex_occ)
+#endif
 	}
 
 	template <typename Rng> void metropolis_move(Rng& rng)
@@ -1110,19 +1160,19 @@ struct Sample
 		TrimerPos seed;
 		while (true)
 		{
-			uint candidate = (uint)(rng() % trimer_occupations.size());
-			if (trimer_occupations[candidate])
+			uint candidate = (uint)(rng() % cfg.trimer_occ.size());
+			if (cfg.trimer_occ[candidate])
 			{
 				seed = TrimerPos::from_index(candidate, w);
-				trimer_occupations[candidate] = false;
+				cfg.trimer_occ[candidate] = false;
 				break;
 			}
 		}
 		TrimerPos dest;
 		while (true)
 		{
-			uint candidate = (uint)(rng() % trimer_occupations.size());
-			if (!trimer_occupations[candidate])
+			uint candidate = (uint)(rng() % cfg.trimer_occ.size());
+			if (!cfg.trimer_occ[candidate])
 			{
 				dest = TrimerPos::from_index(candidate, w);
 				break;
@@ -1131,51 +1181,51 @@ struct Sample
 
 		int dj4 = 0;
 		for (auto& rel : j4_neighbor_list[seed.s])
-			if (trimer_occupations[TrimerPos(seed.x + rel.x, seed.y + rel.y, 1 - seed.s).canonical(w, h).index(w)])
+			if (cfg.trimer_occ[TrimerPos(seed.x + rel.x, seed.y + rel.y, 1 - seed.s).canonical(w, h).index(w)])
 				dj4--;
 		for (auto& rel : j4_neighbor_list[dest.s])
-			if (trimer_occupations[TrimerPos(dest.x + rel.x, dest.y + rel.y, 1 - dest.s).canonical(w, h).index(w)])
+			if (cfg.trimer_occ[TrimerPos(dest.x + rel.x, dest.y + rel.y, 1 - dest.s).canonical(w, h).index(w)])
 				dj4++;
 
 		int dcluster = 0;
 		for (const auto& [occ, rel] : seed.get_clusters_wrel(w, h))
 		{
-			auto& popc = vertex_occupations[occ.index(w)].occupations;
-			ASSERT((popc & rel.occupations) != 0);
+			auto& popc = cfg.vertex_occ[occ.index(w)].mask;
+			ASSERT((popc & rel.mask) != 0);
 
 			// difference due to removing one
 			// (x-1)(x-2)/2 - x(x-1)/2 = 1 - x
 			dcluster += 1 - __builtin_popcount(popc);
-			popc &= (uint8_t)~rel.occupations;
+			popc &= (uint8_t)~rel.mask;
 		}
 		for (const auto& [occ, rel] : dest.get_clusters_wrel(w, h))
 		{
-			auto& popc = vertex_occupations[occ.index(w)].occupations;
-			ASSERT((popc & rel.occupations) == 0);
+			auto& popc = cfg.vertex_occ[occ.index(w)].mask;
+			ASSERT((popc & rel.mask) == 0);
 
 			// difference due to adding one
 			// x(x+1)/2 - x(x-1)/2 = x
 			dcluster += __builtin_popcount(popc);
-			popc |= rel.occupations;
+			popc |= rel.mask;
 		}
 
-		trimer_occupations[dest.index(w)] = true;
+		cfg.trimer_occ[dest.index(w)] = true;
 
-		j4_total += dj4;
-		clusters_total += dcluster;
+		cfg.j4_total += dj4;
+		cfg.clusters_total += dcluster;
 
 #ifdef TEST
-		int oldj4 = j4_total;
-		int oldcluster = clusters_total;
-		j4_total = -1;
-		clusters_total = -1;
+		int oldj4 = cfg.j4_total;
+		int oldcluster = cfg.clusters_total;
+		cfg.j4_total = -1;
+		cfg.clusters_total = -1;
 		calculate_energy();
-		ASSERT(j4_total == oldj4)
-		ASSERT(clusters_total == oldcluster)
+		ASSERT(cfg.j4_total == oldj4)
+		ASSERT(cfg.clusters_total == oldcluster)
 
-		auto occupations = vertex_occupations;
+		auto occupations = cfg.vertex_occ;
 		regenerate_occupation();
-		ASSERT(occupations == vertex_occupations)
+		ASSERT(occupations == cfg.vertex_occ)
 #endif
 	}
 
@@ -1184,8 +1234,8 @@ struct Sample
 		if (w != h || w % 6)
 			throw "";
 
-		std::fill(trimer_occupations.begin(), trimer_occupations.end(), false);
-		std::fill(vertex_occupations.begin(), vertex_occupations.end(), Cluster());
+		std::fill(cfg.trimer_occ.begin(), cfg.trimer_occ.end(), false);
+		std::fill(cfg.vertex_occ.begin(), cfg.vertex_occ.end(), Cluster());
 
 		int orientation = (int)(rng() % 3);
 		int phase = (int)(rng() % 3);
@@ -1246,9 +1296,9 @@ struct Sample
 
 				if (n++ >= vacancies)
 				{
-					trimer_occupations[cur_pos.canonical(w, h).index(w)] = true;
+					cfg.trimer_occ[cur_pos.canonical(w, h).index(w)] = true;
 					for (auto& [pos, rel] : cur_pos.get_clusters_wrel(w, h))
-						vertex_occupations[pos.index(w)].occupations |= rel.occupations;
+						cfg.vertex_occ[pos.index(w)].mask |= rel.mask;
 				}
 			}
 
@@ -1266,14 +1316,14 @@ struct Sample
 			}
 		}
 
-		j4_total = -1;
-		clusters_total = 0;
+		cfg.j4_total = -1;
+		cfg.clusters_total = 0;
 	}
 
 	template <typename Rng> void load_from(std::string file, Rng& rng, int vacancies, int line_number=-1)
 	{
-		std::fill(trimer_occupations.begin(), trimer_occupations.end(), false);
-		std::fill(vertex_occupations.begin(), vertex_occupations.end(), Cluster());
+		std::fill(cfg.trimer_occ.begin(), cfg.trimer_occ.end(), false);
+		std::fill(cfg.vertex_occ.begin(), cfg.vertex_occ.end(), Cluster());
 
 		std::ifstream ifs(file);
 		if (ifs.fail())
@@ -1310,13 +1360,13 @@ struct Sample
 		for (uint i = vacancies; i < positions.size(); i++)
 		{
 			const auto& pos = positions[i];
-			trimer_occupations[pos.index(w)] = true;
+			cfg.trimer_occ[pos.index(w)] = true;
 			for (auto& [npos, rel] : pos.get_clusters_wrel(w, h))
-				vertex_occupations[npos.index(w)].occupations |= rel.occupations;
+				cfg.vertex_occ[npos.index(w)].mask |= rel.mask;
 		}
 
-		j4_total = -1;
-		clusters_total = -1;
+		cfg.j4_total = -1;
+		cfg.clusters_total = -1;
 	}
 
 	template <typename Rng> void reconfigure_root3(Rng& rng, int vacancies = 0)
@@ -1324,8 +1374,8 @@ struct Sample
 		if (w != h || w % 3)
 			throw "";
 
-		std::fill(trimer_occupations.begin(), trimer_occupations.end(), false);
-		std::fill(vertex_occupations.begin(), vertex_occupations.end(), Cluster());
+		std::fill(cfg.trimer_occ.begin(), cfg.trimer_occ.end(), false);
+		std::fill(cfg.vertex_occ.begin(), cfg.vertex_occ.end(), Cluster());
 
 		int offset = (int)(rng() % 6);
 
@@ -1337,13 +1387,13 @@ struct Sample
 					{
 						TrimerPos pos;
 						pos = TrimerPos(i + offset / 2 + s, j + s, offset % 2);
-						trimer_occupations[pos.canonical(w, h).index(w)] = true;
+						cfg.trimer_occ[pos.canonical(w, h).index(w)] = true;
 						for (auto& [pos, rel] : pos.get_clusters_wrel(w, h))
-							vertex_occupations[pos.index(w)].occupations |= rel.occupations;
+							cfg.vertex_occ[pos.index(w)].mask |= rel.mask;
 					}
 
-		j4_total = 0;
-		clusters_total = 0;
+		cfg.j4_total = 0;
+		cfg.clusters_total = 0;
 	}
 };
 const std::array<std::array<MonomerPos, 6>, 2> Sample::j4_neighbor_list = {
@@ -1358,9 +1408,9 @@ template <> struct hash<Sample>
 	std::size_t operator()(const Sample& x) const
 	{
 		std::size_t seed = 0;
-		for (size_t i = 0; i < x.trimer_occupations.size(); i++)
+		for (size_t i = 0; i < x.cfg.trimer_occ.size(); i++)
 		{
-			if (x.trimer_occupations[i])
+			if (x.cfg.trimer_occ[i])
 				seed ^= std::hash<TrimerPos>()(TrimerPos::from_index((uint32_t)i, x.w))
 					+ 0x9e3779b9 + (seed << 6) + (seed >> 2);
 		}
@@ -1374,26 +1424,32 @@ struct SampleDimer
   private:
 	std::vector<TrimerPos> _pocket, _Abar;
 	std::vector<std::pair<MonomerPos, Cluster>> _Abar_entries;
-	std::unordered_map<TrimerPos, InteractionCount> _candidates;
+	std::unordered_set<TrimerPos> _candidates;
 
   public:
 	int32_t w, h;
-	std::vector<bool> trimer_occupations;
-	std::vector<Cluster> vertex_occupations;
+
+	struct Configuration
+	{
+		std::vector<bool> trimer_occ;
+		std::vector<Cluster> vertex_occ;
+	};
+
+	Configuration cfg;
 
 	SampleDimer() : w(0), h(0) {}
 
 	SampleDimer(int32_t w, int32_t h) : w(w), h(h)
 	{
-		trimer_occupations = std::vector<bool>(w * h * 2, false);
-		vertex_occupations = std::vector<Cluster>(w * h);
+		cfg.trimer_occ = std::vector<bool>(w * h * 2, false);
+		cfg.vertex_occ = std::vector<Cluster>(w * h);
 	}
 
 	SampleDimer(int32_t w, int32_t h, const std::vector<TrimerPos>& dimers) : w(w), h(h)
 	{
-		trimer_occupations = std::vector<bool>(w * h * 2, false);
+		cfg.trimer_occ = std::vector<bool>(w * h * 2, false);
 		for (auto& i : dimers)
-			trimer_occupations[i.index(w)] = true;
+			cfg.trimer_occ[i.index(w)] = true;
 
 		regenerate_occupation();
 	}
@@ -1420,16 +1476,16 @@ struct SampleDimer
 
 	void regenerate_occupation()
 	{
-		vertex_occupations = std::vector<Cluster>(w * h);
+		cfg.vertex_occ = std::vector<Cluster>(w * h);
 
-		for (uint i = 0; i < trimer_occupations.size(); i++)
+		for (uint i = 0; i < cfg.trimer_occ.size(); i++)
 		{
-			if (trimer_occupations[i])
+			if (cfg.trimer_occ[i])
 			{
 				auto tri = TrimerPos::from_index(i, w);
 
 				for (auto& [occ, rel] : get_dimer_clusters_wrel(tri))
-					vertex_occupations[occ.index(w)].occupations |= rel.occupations;
+					cfg.vertex_occ[occ.index(w)].mask |= rel.mask;
 			}
 		}
 	}
@@ -1442,7 +1498,7 @@ struct SampleDimer
 
 		while (true)
 		{
-			if (trimer_occupations[cpos.index(w)])
+			if (cfg.trimer_occ[cpos.index(w)])
 				tot += sign;
 
 			switch (start.s)
@@ -1498,6 +1554,10 @@ struct SampleDimer
 		return np.canonical(w, h);
 	}
 
+	const std::array<TrimerPos, 4> plaquette_dimers = {
+		TrimerPos{0, 0, 0}, {0, 0, 1}, {-1, 0, 0}, {0, -1, 1}
+	};
+
 	template <typename Rng> void pocket_move(Rng& rng)
 	{
 		MonomerPos symc;
@@ -1506,14 +1566,14 @@ struct SampleDimer
 		TrimerPos seed(0, 0, 2);
 		while (seed.s == 2)
 		{
-			uint candidate = (uint)(rng() % trimer_occupations.size());
+			uint candidate = (uint)(rng() % cfg.trimer_occ.size());
 			symc = MonomerPos((int)(rng() % w), (int)(rng() % h));
 			syma = (int)(rng() % 4);
 
-			if (trimer_occupations[candidate])
+			if (cfg.trimer_occ[candidate])
 			{
 				seed = TrimerPos::from_index(candidate, w);
-				if (trimer_occupations[dimer_reflect(seed, symc, syma).index(w)])
+				if (cfg.trimer_occ[dimer_reflect(seed, symc, syma).index(w)])
 					seed = TrimerPos(0, 0, 2);
 			}
 		}
@@ -1523,11 +1583,11 @@ struct SampleDimer
 		_pocket.clear();
 		_pocket.push_back(seed);
 
-		trimer_occupations[seed.index(w)] = false;
+		cfg.trimer_occ[seed.index(w)] = false;
 		for (auto& [i, occ] : get_dimer_clusters_wrel(seed))
 		{
-			ASSERT((vertex_occupations[i.index(w)].occupations & occ.occupations) != 0)
-			vertex_occupations[i.index(w)].occupations &= (uint8_t)~occ.occupations;
+			ASSERT((cfg.vertex_occ[i.index(w)].mask & occ.mask) != 0)
+			cfg.vertex_occ[i.index(w)].mask &= (uint8_t)~occ.mask;
 		}
 
 		while (_pocket.size() > 0)
@@ -1544,52 +1604,45 @@ struct SampleDimer
 			for (const auto& [i, rel] : get_dimer_clusters_wrel(moved))
 			{
 				_Abar_entries.push_back(std::make_pair(i, rel));
-				auto target_occ = vertex_occupations[i.index(w)].occupations;
+				auto target_occ = cfg.vertex_occ[i.index(w)].mask;
 
 				if (target_occ > 0)
-				{
-					for (int dx = -1; dx <= 0; dx++)
-						for (int dy = -1; dy <= 0; dy++)
-							for (int s = 0; s < 2; s++)
-								if ((target_occ & Cluster::relative(dx, dy, s).occupations) != 0)
-								{
-									auto overlap = TrimerPos(i.x + dx, i.y + dy, s).canonical(w, h);
-									_candidates[overlap].u++;
-								}
-				}
+					for (const auto& d : plaquette_dimers)
+						if ((target_occ & Cluster::relative(d.x, d.y, d.s).mask) != 0)
+						{
+							auto overlap = TrimerPos(i.x + d.x, i.y + d.y, d.s).canonical(w, h);
+							_candidates.insert(overlap);
+						}
 			}
 
-			for (auto& [pos, interactions] : _candidates)
+			for (const auto& pos : _candidates)
 			{
-				if (trimer_occupations[dimer_reflect(pos, symc, syma).index(w)] == false)
+				_pocket.push_back(pos);
+				cfg.trimer_occ[pos.index(w)] = false;
+				for (auto& [cluster, rel] : get_dimer_clusters_wrel(pos))
 				{
-					_pocket.push_back(pos);
-					trimer_occupations[pos.index(w)] = false;
-					for (auto& [cluster, rel] : get_dimer_clusters_wrel(pos))
-					{
-						ASSERT((vertex_occupations[cluster.index(w)].occupations & rel.occupations) != 0)
-						vertex_occupations[cluster.index(w)].occupations &= (uint8_t)~rel.occupations;
-					}
+					ASSERT((cfg.vertex_occ[cluster.index(w)].mask & rel.mask) != 0)
+					cfg.vertex_occ[cluster.index(w)].mask &= (uint8_t)~rel.mask;
 				}
 			}
 		}
 
 		for (auto& i : _Abar)
 		{
-			ASSERT(trimer_occupations[i.index(w)] == false)
-			trimer_occupations[i.index(w)] = true;
+			ASSERT(cfg.trimer_occ[i.index(w)] == false)
+			cfg.trimer_occ[i.index(w)] = true;
 		}
 
 		for (auto& [vertex, occ] : _Abar_entries)
 		{
-			ASSERT((vertex_occupations[vertex.index(w)].occupations & occ.occupations) == 0)
-			vertex_occupations[vertex.index(w)].occupations |= occ.occupations;
+			ASSERT((cfg.vertex_occ[vertex.index(w)].mask & occ.mask) == 0)
+			cfg.vertex_occ[vertex.index(w)].mask |= occ.mask;
 		}
 
 #ifdef TEST
-		auto occupations = vertex_occupations;
+		auto occupations = cfg.vertex_occ;
 		regenerate_occupation();
-		ASSERT(occupations == vertex_occupations)
+		ASSERT(occupations == cfg.vertex_occ)
 #endif
 	}
 };
@@ -1722,27 +1775,28 @@ struct PTWorker
 			else if (options.metropolis)
 			{
 				sample.calculate_energy();
-				Sample copy = sample;
-				copy.metropolis_move(rng);
-				copy.calculate_energy();
+				Sample::Configuration copy = sample.cfg;
+
+				sample.metropolis_move(rng);
+				sample.calculate_energy();
 
 				double d_energy =
-					(copy.j4_total - sample.j4_total) * j4 + (copy.clusters_total - sample.clusters_total) * u;
-				if (uniform(rng) <= std::exp(-d_energy))
-					std::swap(copy, sample);
+					(sample.cfg.j4_total - copy.j4_total) * j4 + (sample.cfg.clusters_total - copy.clusters_total) * u;
+				if (uniform(rng) <= 1 - std::exp(-d_energy))
+					std::swap(copy, sample.cfg);
 			}
 			else
 				sample.pocket_move(rng, u, j4);
 
 #ifdef SECTORTEST
-			if (!seen.contains(sample.trimer_occupations)) {
-				seen.insert(sample.trimer_occupations);
+			if (!seen.contains(sample.cfg.trimer_occ)) {
+				seen.insert(sample.cfg.trimer_occ);
 				auto sector = sample.calculate_topo_sector();
 				occurrences[sector]++;
 
 				// if (ri == -1 && rj == 0 && gi == 0 && gj == -2) {
-				// 	for (uint j = 0; j < sample.trimer_occupations.size(); j++)
-				// 		if (sample.trimer_occupations[j])
+				// 	for (uint j = 0; j < sample.cfg.trimer_occ.size(); j++)
+				// 		if (sample.cfg.trimer_occ[j])
 				// 			topoconf << TrimerPos::from_index(j, sample.w) << " ";
 				// 	topoconf << std::endl;
 				// }
@@ -1757,7 +1811,7 @@ struct PTWorker
 		}
 		std::cout << std::endl;
 		sample.calculate_energy();
-		std::cout << seen.size() << " " << sample.clusters_total << std::endl;
+		std::cout << seen.size() << " " << sample.cfg.clusters_total << std::endl;
 #endif
 
 		auto end1 = std::chrono::high_resolution_clock::now();
@@ -1795,8 +1849,8 @@ struct PTWorker
 
 			if (total_steps > previous_position_output + options.position_interval)
 			{
-				for (uint j = 0; j < sample.trimer_occupations.size(); j++)
-					if (sample.trimer_occupations[j])
+				for (uint j = 0; j < sample.cfg.trimer_occ.size(); j++)
+					if (sample.cfg.trimer_occ[j])
 						ofconf << TrimerPos::from_index(j, sample.w) << " ";
 				ofconf << std::endl;
 				previous_position_output = total_steps;
@@ -1917,8 +1971,8 @@ struct PTEnsemble
 			chains[i].sample.calculate_energy();
 			chains[i + 1].sample.calculate_energy();
 
-			double u_factor = (chains[i].sample.clusters_total - chains[i + 1].sample.clusters_total) * options.u;
-			double j4_factor = (chains[i].sample.j4_total - chains[i + 1].sample.j4_total) * options.j4;
+			double u_factor = (chains[i].sample.cfg.clusters_total - chains[i + 1].sample.cfg.clusters_total) * options.u;
+			double j4_factor = (chains[i].sample.cfg.j4_total - chains[i + 1].sample.cfg.j4_total) * options.j4;
 
 			double action;
 			if (u_factor + j4_factor == 0)
@@ -1930,7 +1984,7 @@ struct PTEnsemble
 			acceptances[i] += std::min(1., accept);
 
 			if (uniform(rng) < accept)
-				std::swap(chains[i].sample, chains[i + 1].sample);
+				std::swap(chains[i].sample.cfg, chains[i + 1].sample.cfg);
 		}
 		swap_count++;
 		acceptance_ratios.record(acceptances);
@@ -2063,29 +2117,29 @@ struct MuCaWorker
 		for (int i = 0; i < options.decorr_interval; i++)
 		{
 			sample.calculate_energy();
-			Sample copy = sample;
-			copy.pocket_move(rng, infinity, 0);
-			copy.calculate_energy();
+			Sample::Configuration copy = sample.cfg;
+			sample.pocket_move(rng, infinity, 0);
+			sample.calculate_energy();
 
-			if (copy.j4_total > max_energy)
+			if (sample.cfg.j4_total > max_energy)
 			{
-				if (copy.j4_total < sample.j4_total)
-					std::swap(copy, sample);
+				if (sample.cfg.j4_total < copy.j4_total)
+					std::swap(copy, sample.cfg);
 				continue;
 			}
-			if (copy.j4_total < min_energy)
+			if (sample.cfg.j4_total < min_energy)
 			{
-				if (copy.j4_total > sample.j4_total)
-					std::swap(copy, sample);
+				if (sample.cfg.j4_total > copy.j4_total)
+					std::swap(copy, sample.cfg);
 				continue;
 			}
 
-			if (uniform(rng) <= std::exp(get_log_dos(sample.j4_total) - get_log_dos(copy.j4_total)))
-				std::swap(copy, sample);
+			if (uniform(rng) <= 1 - std::exp(get_log_dos(copy.j4_total) - get_log_dos(sample.cfg.j4_total)))
+				std::swap(copy, sample.cfg);
 		}
 
-		log_dos[sample.j4_total] += factor;
-		hist[sample.j4_total] += 1;
+		log_dos[sample.cfg.j4_total] += factor;
+		hist[sample.cfg.j4_total] += 1;
 	}
 
 	double get_log_dos(int j4)
@@ -2171,18 +2225,18 @@ struct MuCaEnsemble
 			chains[i].sample.calculate_energy();
 			chains[i + 1].sample.calculate_energy();
 
-			if (chains[i].sample.j4_total < chains[i + 1].min_energy)
+			if (chains[i].sample.cfg.j4_total < chains[i + 1].min_energy)
 				continue;
-			if (chains[i + 1].sample.j4_total > chains[i].max_energy)
+			if (chains[i + 1].sample.cfg.j4_total > chains[i].max_energy)
 				continue;
 
-			double accept = std::exp(chains[i].get_log_dos(chains[i].sample.j4_total) +
-									 chains[i + 1].get_log_dos(chains[i + 1].sample.j4_total) -
-									 chains[i].get_log_dos(chains[i + 1].sample.j4_total) -
-									 chains[i + 1].get_log_dos(chains[i].sample.j4_total));
+			double accept = std::exp(chains[i].get_log_dos(chains[i].sample.cfg.j4_total) +
+									 chains[i + 1].get_log_dos(chains[i + 1].sample.cfg.j4_total) -
+									 chains[i].get_log_dos(chains[i + 1].sample.cfg.j4_total) -
+									 chains[i + 1].get_log_dos(chains[i].sample.cfg.j4_total));
 
 			if (uniform(rng) < accept)
-				std::swap(chains[i].sample, chains[i + 1].sample);
+				std::swap(chains[i].sample.cfg, chains[i + 1].sample.cfg);
 		}
 		swap_count++;
 	}
@@ -2424,8 +2478,8 @@ void sim(int argc, char** argv)
 
 			if (nstep >= prev_conf + options.position_interval)
 			{
-				for (uint j = 0; j < sample.trimer_occupations.size(); j++)
-					if (sample.trimer_occupations[j])
+				for (uint j = 0; j < sample.cfg.trimer_occ.size(); j++)
+					if (sample.cfg.trimer_occ[j])
 						ofconf << TrimerPos::from_index(j, sample.w) << " ";
 				ofconf << std::endl;
 				prev_conf = nstep;
@@ -2491,7 +2545,7 @@ void test_brickwall()
 			sample.reconfigure_brick_wall(rng);
 
 		sample.calculate_energy();
-		TEST_ASSERT2(sample.j4_total == 48 * 48 / 2, sample.j4_total)
+		TEST_ASSERT2(sample.cfg.j4_total == 48 * 48 / 2, sample.cfg.j4_total)
 	}
 }
 

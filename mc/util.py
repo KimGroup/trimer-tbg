@@ -3,6 +3,50 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib
 
+def topo_sectors(pos, lines, w, h):
+    mpos = set(pos)
+    vals = []
+    for start, dir in lines:
+        cpos = start
+        total = 0
+        while True:
+            if cpos in mpos:
+                total += 1
+
+            if dir == 0:
+                if cpos[2] == 0:
+                    cpos = (cpos[0], cpos[1], 1)
+                else:
+                    cpos = (cpos[0] + 1, cpos[1] + 1, 0)
+            elif dir == 1:
+                if cpos[2] == 0:
+                    cpos = (cpos[0] - 1, cpos[1], 1)
+                else:
+                    cpos = (cpos[0] - 1, cpos[1] + 1, 0)
+            elif dir == 2:
+                if cpos[2] == 0:
+                    cpos = (cpos[0], cpos[1] - 1, 1)
+                else:
+                    cpos = (cpos[0] + 1, cpos[1] - 1, 0)
+
+            cpos = (cpos[0] % w, cpos[1] % h, cpos[2])
+
+            if cpos == start:
+                break
+        vals.append(total - (w+h)//6)
+    return vals
+
+def winding_numbers(pos, w, h):
+    secs = topo_sectors(pos, [((0, 0, 0), 0), ((2, 0, 0), 1), ((1, 0, 0), 0), ((0, 0, 0), 1)], w, h)
+
+    # i+j=A
+    # -2i+j=B
+    # i = (A-B)/3
+    # j = (2A+B)/3
+    ri, rj = (secs[0]-secs[1])//3, (2*secs[0]+secs[1])//3
+    gi, gj = (secs[2]-secs[3])//3, (2*secs[2]+secs[3])//3
+    return ri, rj, gi, gj
+
 def conf_to_string(conf):
     return " ".join("(" + ",".join(str(y) for y in x) + ")" for x in conf)
 
@@ -67,13 +111,15 @@ def parse_positions(l):
         pos.append((int(tokens[0]), int(tokens[1]), int(tokens[2])))
     return pos
 
-def read_positions(f, stride=1, skip=0):
+def read_positions(f, stride=1, skip=0, take=None):
     pos = []
-    counter = 0
     with open(f, "r") as f:
         for index, l in enumerate(f):
             if index < skip:
                 continue
+            if take is not None and index > skip + take:
+                break
+
             if index % stride == 0:
                 pos.append(parse_positions(l))
     return pos
@@ -162,50 +208,59 @@ def show_worms(ax, positions, w, h):
     LOOP = 1
     BRANCH = 2
 
+    def start_worm(x, y):
+        color = (x + 2 * y) % 3
+
+        current_line = set()
+        cpos = (x, y)
+        while cpos not in segments:
+            index = None
+            trimerpos = None
+            for i, pos in enumerate(enum_plaquette(cpos, w, h)):
+                if pos in positions:
+                    index = i
+                    trimerpos = pos
+                    break
+            else:
+                raise ValueError()
+            
+            current_line.add(cpos)
+            next = flip_monomer(cpos, index, w, h)
+            segments[cpos] = Segment(-1, UNKNOWN, next, index)
+            cpos = next
+        
+        if segments[cpos].type == UNKNOWN:
+            while cpos in current_line:
+                prev = segments[cpos]
+                segments[cpos] = Segment(len(loops), LOOP, prev.next, prev.dir)
+                current_line.remove(cpos)
+                cpos = prev.next
+            for pos in current_line:
+                prev = segments[pos]
+                segments[pos] = Segment(len(loops), BRANCH, prev.next, prev.dir)
+
+            loops.append({"start": cpos, "color": color})
+        elif segments[cpos].type == BRANCH:
+            loopid = segments[cpos].loop
+            for pos in current_line:
+                prev = segments[pos]
+                segments[pos] = Segment(loopid, BRANCH, prev.next, prev.dir)
+        elif segments[cpos].type == LOOP:
+            loopid = segments[cpos].loop
+            for pos in current_line:
+                prev = segments[pos]
+                segments[pos] = Segment(loopid, BRANCH, prev.next, prev.dir)
+
     for x in range(w):
         for y in range(h):
-            color = (x + 2 * y) % 3
-
-            if any(trimer in positions for trimer in enum_starofdavid((x, y), w, h)):
-                # it's not a vortex, skip
+            # if any(trimer in positions for trimer in enum_starofdavid((x, y), w, h)):
+            #     # it's not a vortex, skip
+            #     continue
+            if (x, y) in segments:
                 continue
 
-            current_line = set()
-            cpos = (x, y)
-            while cpos not in segments:
-                index = None
-                trimerpos = None
-                for i, pos in enumerate(enum_plaquette(cpos, w, h)):
-                    if pos in positions:
-                        index = i
-                        trimerpos = pos
-                        break
-                else:
-                    raise ValueError()
-                
-                current_line.add(cpos)
-                next = flip_monomer(cpos, index, w, h)
-                segments[cpos] = Segment(-1, UNKNOWN, next, index)
-                cpos = next
-            
-            if segments[cpos].type == UNKNOWN:
-                while cpos in current_line:
-                    prev = segments[cpos]
-                    segments[cpos] = Segment(len(loops), LOOP, prev.next, prev.dir)
-                    current_line.remove(cpos)
-                    cpos = prev.next
-                for pos in current_line:
-                    prev = segments[pos]
-                    segments[pos] = Segment(len(loops), BRANCH, prev.next, prev.dir)
+            start_worm(x, y)
 
-                loops.append({"start": cpos, "color": color})
-            elif segments[cpos].type == BRANCH:
-                continue
-            elif segments[cpos].type == LOOP:
-                loopid = segments[cpos].loop
-                for pos in current_line:
-                    prev = segments[pos]
-                    segments[pos] = Segment(loopid, BRANCH, prev.next, prev.dir)
 
     lines = [[], [], []]
     for begin, seg in segments.items():
@@ -287,12 +342,10 @@ def show_worms(ax, positions, w, h):
         loops[i]["wx"] = wx[i]
         loops[i]["wy"] = wy[i]
     
-    for i in range(len(loops)):
-        loop = loops[i]
-        print("Loop", i, "RGB"[loop["color"]], (loop["wx"], loop["wy"]))
+    print(" ".join(str(("RGB"[loop["color"]], loop["wx"], loop["wy"])) for loop in loops))
 
 
-def show_positions(ax, positions, type="worm", show_monomers=False, color="black"):
+def show_positions(ax, positions, type="worm", show_monomers=False, color="black", length=None):
     def to_rgba(hex, alpha):
         return ((hex >> 16) / 256, ((hex >> 8) & 0xFF) / 256, (hex & 0xFF) / 256, alpha)
 
@@ -304,8 +357,13 @@ def show_positions(ax, positions, type="worm", show_monomers=False, color="black
     color6 = 0x4db2f1
     colors = [color1, color2, color3, color4, color5, color6]
 
-    width = max(x for x, y, s in positions)+1
-    height = max(y for x, y, s in positions)+1
+    if length is None:
+        width = max(x for x, y, s in positions)+1
+        height = max(y for x, y, s in positions)+1
+    else:
+        width = length
+        height = length
+
     draw_hexalattice(ax, width, height)
     positions = set(positions)
 
