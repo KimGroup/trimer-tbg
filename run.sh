@@ -5,4 +5,4 @@
 
 source /home/kz345/.bashrc
 conda activate env
-python3.11 -u mc/run_pocket.py
+python3.11 -u mc/full_enum.py

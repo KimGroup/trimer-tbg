@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib
 
+def conf_to_string(conf):
+    return " ".join("(" + ",".join(str(y) for y in x) + ")" for x in conf)
+
 def read_histogram(fname, skip=0):
     with open(fname, mode="rb") as f:
         f.seek(0, 2)
@@ -16,16 +19,16 @@ def read_histogram(fname, skip=0):
         s = np.ndarray((entries,), dtype=np.int32, buffer=buf, strides=(12,), offset=8).astype(np.double)
         return e, k, s
 
-def read_histogram_winding(fname, skip=0):
+def read_histogram_sector(fname, skip=0):
     with open(fname, mode="rb") as f:
         f.seek(0, 2)
         fsize = f.tell()
-        f.seek(skip*22, 0)
-        buf = f.read(fsize - skip*22)
-        entries = len(buf) // 22
+        f.seek(skip*12, 0)
+        buf = f.read(fsize - skip*12)
+        entries = len(buf) // 12
 
-        e = np.ndarray((entries,), dtype=np.single, buffer=buf, strides=(22,)).astype(np.double)
-        w = np.ndarray((entries,9), dtype=np.short, buffer=buf, strides=(22,2), offset=4).astype(np.double)
+        e = np.ndarray((entries,), dtype=np.single, buffer=buf, strides=(12,)).astype(np.double)
+        w = np.ndarray((entries,4), dtype=np.short, buffer=buf, strides=(12,2), offset=4).astype(np.double)
         return e, w
 
 def read_histogram_winding_dimer(fname, skip=0):
@@ -111,7 +114,185 @@ def draw_hexalattice(ax, width, height, color=None, ls="-"):
     ax.add_collection(matplotlib.collections.LineCollection(
         [(vertices[x], vertices[y]) for x, y in lines], color=color, lw=1, ls=ls, zorder=0.5))
 
-def show_positions(ax, positions, type="domains", show_monomers=False, color="black"):
+
+def enum_starofdavid(mono_pos, w, h):
+    x, y = mono_pos
+    l = [
+        (x, y, 1), (x-1, y+1, 0), (x-2, y, 1),
+        (x-1, y-1, 0), (x, y-2, 1), (x+1, y-1, 0)
+    ]
+
+    return [(x%w, y%h, s) for (x, y, s) in l]
+
+def enum_plaquette(mono_pos, w, h):
+    x, y = mono_pos
+    l = [
+        (x, y, 0), (x-1, y, 1), (x-1, y, 0),
+        (x-1, y-1, 1), (x, y-1, 0), (x, y-1, 1)
+    ]
+
+    return [(x%w, y%h, s) for (x, y, s) in l]
+
+def flip_monomer(mono_pos, dir, w, h):
+    x, y = mono_pos
+    if dir == 0:
+        x, y = x+1, y+1
+    elif dir == 1:
+        x, y = x-1, y+2
+    elif dir == 2:
+        x, y = x-2, y+1
+    elif dir == 3:
+        x, y = x-1, y-1
+    elif dir == 4:
+        x, y = x+1, y-2
+    elif dir == 5:
+        x, y = x+2, y-1
+
+    return x%w, y%h
+
+def show_worms(ax, positions, w, h):
+    import collections
+    Segment = collections.namedtuple("Segment", "loop type next dir")
+
+    positions = set(positions)
+    segments = {}
+    loops = []
+
+    UNKNOWN = 0
+    LOOP = 1
+    BRANCH = 2
+
+    for x in range(w):
+        for y in range(h):
+            color = (x + 2 * y) % 3
+
+            if any(trimer in positions for trimer in enum_starofdavid((x, y), w, h)):
+                # it's not a vortex, skip
+                continue
+
+            current_line = set()
+            cpos = (x, y)
+            while cpos not in segments:
+                index = None
+                trimerpos = None
+                for i, pos in enumerate(enum_plaquette(cpos, w, h)):
+                    if pos in positions:
+                        index = i
+                        trimerpos = pos
+                        break
+                else:
+                    raise ValueError()
+                
+                current_line.add(cpos)
+                next = flip_monomer(cpos, index, w, h)
+                segments[cpos] = Segment(-1, UNKNOWN, next, index)
+                cpos = next
+            
+            if segments[cpos].type == UNKNOWN:
+                while cpos in current_line:
+                    prev = segments[cpos]
+                    segments[cpos] = Segment(len(loops), LOOP, prev.next, prev.dir)
+                    current_line.remove(cpos)
+                    cpos = prev.next
+                for pos in current_line:
+                    prev = segments[pos]
+                    segments[pos] = Segment(len(loops), BRANCH, prev.next, prev.dir)
+
+                loops.append({"start": cpos, "color": color})
+            elif segments[cpos].type == BRANCH:
+                continue
+            elif segments[cpos].type == LOOP:
+                loopid = segments[cpos].loop
+                for pos in current_line:
+                    prev = segments[pos]
+                    segments[pos] = Segment(loopid, BRANCH, prev.next, prev.dir)
+
+    lines = [[], [], []]
+    for begin, seg in segments.items():
+        if seg.type != LOOP:
+            continue
+        
+        color = (begin[0] + 2 * begin[1]) % 3
+        end = seg.next
+        if begin[0] == 0:
+            if seg.dir in [1, 2, 3]:
+                begin = begin[0] + w, begin[1]
+        if end[0] == 0:
+            if seg.dir in [4, 5, 0]:
+                end = end[0] + w, end[1]
+        if begin[1] == 0:
+            if seg.dir in [3, 4, 5]:
+                begin = begin[0], begin[1] + h
+        if end[1] == 0:
+            if seg.dir in [0, 1, 2]:
+                end = end[0], end[1] + h
+        
+
+        half_offset = None
+        if seg.dir == 1 and begin[1] == h - 1:
+            half_offset = -0.5, 1
+        elif seg.dir == 2 and begin[0] == 1:
+            half_offset = -1, 0.5
+        elif seg.dir == 4 and begin[1] == 1:
+            half_offset = 0.5, -1
+        elif seg.dir == 5 and begin[0] == w - 1:
+            half_offset = 1, -0.5
+
+        if half_offset is None:
+            lines[color].append([mono_coords(*begin), mono_coords(*end)])
+        else:
+            half1 = begin[0] + half_offset[0], begin[1] + half_offset[1]
+            half2 = end[0] - half_offset[0], end[1] - half_offset[1]
+            lines[color].append([mono_coords(*begin), mono_coords(*half1)])
+            lines[color].append([mono_coords(*half2), mono_coords(*end)])
+
+    ax.add_collection(matplotlib.collections.LineCollection(lines[0], color="red", lw=2, ls="-", zorder=2))
+    ax.add_collection(matplotlib.collections.LineCollection(lines[1], color="green", lw=2, ls="-", zorder=2))
+    ax.add_collection(matplotlib.collections.LineCollection(lines[2], color="cyan", lw=2, ls="-", zorder=2))
+
+    wx = collections.defaultdict(int)
+    wy = collections.defaultdict(int)
+
+    for x in range(w):
+        s = segments[(x, 0)]
+        if s.type == LOOP and s.dir in [0, 1, 2]:
+            wx[s.loop] += 1
+        s = segments[(x, h-1)]
+        if s.type == LOOP and s.dir == 1:
+            wx[s.loop] += 1
+
+        s = segments[(x, 1)]
+        if s.type == LOOP and s.dir in [3, 4, 5]:
+            wx[s.loop] -= 1
+        s = segments[(x, 2)]
+        if s.type == LOOP and s.dir == 4:
+            wx[s.loop] -= 1
+
+    for y in range(h):
+        s = segments[(0, y)]
+        if s.type == LOOP and s.dir in [0, 4, 5]:
+            wy[s.loop] += 1
+        s = segments[(w-1, y)]
+        if s.type == LOOP and s.dir == 5:
+            wy[s.loop] += 1
+
+        s = segments[(1, y)]
+        if s.type == LOOP and s.dir in [1, 2, 3]:
+            wy[s.loop] -= 1
+        s = segments[(2, y)]
+        if s.type == LOOP and s.dir == 2:
+            wy[s.loop] -= 1
+
+    for i in range(len(loops)):
+        loops[i]["wx"] = wx[i]
+        loops[i]["wy"] = wy[i]
+    
+    for i in range(len(loops)):
+        loop = loops[i]
+        print("Loop", i, "RGB"[loop["color"]], (loop["wx"], loop["wy"]))
+
+
+def show_positions(ax, positions, type="worm", show_monomers=False, color="black"):
     def to_rgba(hex, alpha):
         return ((hex >> 16) / 256, ((hex >> 8) & 0xFF) / 256, (hex & 0xFF) / 256, alpha)
 
@@ -143,7 +324,7 @@ def show_positions(ax, positions, type="domains", show_monomers=False, color="bl
     for x, y, s in positions:
         xy = trimer_coords(x, y, s)
         patches.append(mpatches.RegularPolygon(xy, numVertices=3,
-                                            radius=1.2/np.sqrt(3),
+                                            radius=1/np.sqrt(3),
                                             orientation=s*np.pi))
         sublattice = (4 * y + 2 * x + s) % 6
         facecolors.append(to_rgba(colors[sublattice], 1))
@@ -174,7 +355,6 @@ def show_positions(ax, positions, type="domains", show_monomers=False, color="bl
             for dx, dy in [(1, 1), (1, -2), (-2, 1)]:
                 if (x+dx, y+dy, s) in positions:
                     brokenj4lines.append([trimer_coords(x, y, s), trimer_coords(x+dx, y+dy, s)])
-    print(nj4)
     
     monopatches = []
     for x, y in monomers:
@@ -189,8 +369,11 @@ def show_positions(ax, positions, type="domains", show_monomers=False, color="bl
 
     if type == "none":
         ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors="black", facecolors=color, zorder=1.2))
-    elif type == "domains":
-        ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors=None, facecolors=facecolors, zorder=1.2))
+    elif type == "worm":
+        ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors="black", facecolors=color, zorder=1.2))
+        show_worms(ax, positions, width, height)
+    elif type == "domain":
+        ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors=None, facecolors=facecolors, zorder=-1.2))
     else:
         ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors="black", facecolors=color, zorder=1.2))
         ax.add_collection(matplotlib.collections.LineCollection(brokenj4lines, color="orchid", lw=2, ls="-", zorder=2))
@@ -198,8 +381,8 @@ def show_positions(ax, positions, type="domains", show_monomers=False, color="bl
 
 
     ax.axis("off")
-    ax.set_xlim([10, 50])
-    ax.set_ylim([10, 30])
+    ax.set_xlim([0, 50])
+    ax.set_ylim([0, 30])
     ax.set_aspect("equal")
 
 def show_positions_dimer(ax, positions):

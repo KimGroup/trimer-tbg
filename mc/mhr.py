@@ -21,7 +21,7 @@ def autocorr_func_1d(x, norm=True):
     acf /= 4 * n
 
     # Optionally normalize
-    if norm:
+    if norm and np.abs(acf[0]) > 1e-6:
         acf /= acf[0]
 
     return acf

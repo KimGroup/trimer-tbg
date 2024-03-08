@@ -163,37 +163,86 @@ struct TrimerPos
 		return r;
 	}
 
-	TrimerPos reflect(MonomerPos center, int dir, int w, int h) const
+	TrimerPos rotate(int dir)
 	{
-		auto p = center_at(center, w, h);
-		int32_t cx = center.x, cy = center.y;
-		TrimerPos np;
+		MonomerPos p = MonomerPos(x, y);
+		switch (pmod(dir, 6))
+		{
+		case 0:
+			return *this;
+		case 1:
+			p = p.rotate(1);
+			return !s ? TrimerPos(p.x-1, p.y, 1) : TrimerPos(p.x-1, p.y+1, 0);
+		case 2:
+			p = p.rotate(2);
+			return !s ? TrimerPos(p.x-1, p.y, 0) : TrimerPos(p.x-2, p.y, 1);
+		case 3:
+			p = p.rotate(3);
+			return !s ? TrimerPos(p.x-1, p.y-1, 1) : TrimerPos(p.x-1, p.y-1, 0);
+		case 4:
+			p = p.rotate(4);
+			return !s ? TrimerPos(p.x, p.y-1, 0) : TrimerPos(p.x, p.y-2, 1);
+		case 5:
+			p = p.rotate(5);
+			return !s ? TrimerPos(p.x, p.y-1, 1) : TrimerPos(p.x+1, p.y-1, 0);
+		default:
+			return *this;
+		}
+	}
+
+	TrimerPos reflect(int dir) const
+	{
+		// Reflect about the plaquette (0,0)
 		switch (dir)
 		{
 		case 0:
-			np = !s ? TrimerPos(cx + p.x + p.y, cy - p.y - 1, 1) : TrimerPos(cx + p.x + p.y + 1, cy - p.y - 1, 0);
-			break;
+			return !s ? TrimerPos(x+y, -y-1, 1) : TrimerPos(x+y+1, -y-1, 0);
 		case 1:
-			np = !s ? TrimerPos(cx - p.x - 1, cy + p.y + p.x, 1) : TrimerPos(cx - p.x - 1, cy + p.y + p.x + 1, 0);
-			break;
+			return !s ? TrimerPos(-x-1, y+x, 1) : TrimerPos(-x- 1, y+x+1, 0);
 		case 2:
-			np = !s ? TrimerPos(cx - p.y - 1, cy - p.x - 1, 1) : TrimerPos(cx - p.y - 1, cy - p.x - 1, 0);
-			break;
+			return !s ? TrimerPos(-y-1, -x-1, 1) : TrimerPos(-y - 1, -x-1, 0);
 		case 3:
-			np = !s ? TrimerPos(cx - p.x - p.y - 1, cy + p.y, 0) : TrimerPos(cx - p.x - p.y - 2, cy + p.y, 1);
-			break;
+			return !s ? TrimerPos(-x-y-1, y, 0) : TrimerPos(-x-y-2, y, 1);
 		case 4:
-			np = !s ? TrimerPos(cx + p.x, cy - p.y - p.x - 1, 0) : TrimerPos(cx + p.x, cy - p.y - p.x - 2, 1);
-			break;
+			return !s ? TrimerPos(x, -y-x-1, 0) : TrimerPos(x, -y-x-2, 1);
 		case 5:
-			np = !s ? TrimerPos(cx + p.y, cy + p.x, 0) : TrimerPos(cx + p.y, cy + p.x, 1);
-			break;
+			return !s ? TrimerPos(y, x, 0) : TrimerPos(y, x, 1);
 		default:
-			np = TrimerPos(x, y, s);
-			break;
+			return *this;
 		}
+	}
 
-		return np.canonical(w, h);
+	TrimerPos apply_symmetry(MonomerPos center, int index, int w, int h) const
+	{
+		auto p = center_at(center, w, h);
+
+		if (index < 12)
+			p = p.reflect(index % 6);
+		else if (index < 17)
+			p = p.rotate(index % 6 + 1);
+		else if (index == 17)
+			// pi rotation 1
+			p = TrimerPos(-p.x, -p.y, 1-p.s);
+		else if (index == 18)
+			// pi rotation 2
+			p = TrimerPos(-p.x-1, -p.y, 1-p.s);
+		else if (index == 19)
+			// pi rotation 3
+			p = TrimerPos(-p.x, -p.y-1, 1-p.s);
+		else if (index == 20)
+			// 2pi/3 around A
+			p = TrimerPos(-p.x-p.y-p.s, p.x, p.s);
+		else if (index == 21)
+			// -2pi/3 around A
+			p = TrimerPos(p.y, -p.x-p.y-p.s, p.s);
+		else if (index == 22)
+			// 2pi/3 around B
+			p = TrimerPos(-p.x-p.y+1-p.s, p.x, p.s);
+		else if (index == 23)
+			// -2pi/3 around B
+			p = TrimerPos(p.y, -p.x-p.y+1-p.s, p.s);
+
+		return TrimerPos(center.x + p.x, center.y + p.y, p.s).canonical(w, h);
 	}
 
 	TrimerPos canonical(int32_t w, int32_t h) const { return TrimerPos(pmod(x, w), pmod(y, h), s); }
@@ -247,6 +296,17 @@ template <> struct hash<InteractionCount>
 	{
 		std::size_t seed = std::hash<int32_t>()(x.u);
 		seed ^= std::hash<int32_t>()(x.j4) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		return seed;
+	}
+};
+template <> struct hash<tuple<int, int, int, int>>
+{
+	std::size_t operator()(const tuple<int, int, int, int>& x) const
+	{
+		std::size_t seed = std::hash<int32_t>()(std::get<0>(x));
+		seed ^= std::hash<int32_t>()(std::get<1>(x)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<int32_t>()(std::get<2>(x)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<int32_t>()(std::get<3>(x)) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 		return seed;
 	}
 };
@@ -433,6 +493,10 @@ struct Sample
 			else
 				reconfigure_root3(rng, opt.mono_vacancies / 3);
 		}
+
+#ifdef SECTORTEST
+		// load_from("new-data/weirdtopo.dat", rng, 0, 3);
+#endif
 	}
 
 	void regenerate_occupation()
@@ -506,7 +570,7 @@ struct Sample
 
 				if (p1.s == 1)
 				{
-					n = TrimerPos(p1.x + d.x, p1.y + d.y, p1.s).reflect(MonomerPos(0, 0), 2, w, h);
+					n = TrimerPos(p1.x + d.x, p1.y + d.y, p1.s).apply_symmetry(MonomerPos(0, 0), 2, w, h);
 					n.s = d.s;
 				}
 				else
@@ -827,21 +891,21 @@ struct Sample
 			{
 			case 0:
 				if (cpos.s == 0)
-					cpos = TrimerPos(cpos.x - 1, cpos.y + 1, 1);
-				else
-					cpos = TrimerPos(cpos.x, cpos.y + 1, 0);
-				break;
-			case 1:
-				if (cpos.s == 0)
 					cpos = TrimerPos(cpos.x, cpos.y, 1);
 				else
 					cpos = TrimerPos(cpos.x + 1, cpos.y + 1, 0);
 				break;
+			case 1:
+				if (cpos.s == 0)
+					cpos = TrimerPos(cpos.x - 1, cpos.y, 1);
+				else
+					cpos = TrimerPos(cpos.x - 1, cpos.y + 1, 0);
+				break;
 			case 2:
 				if (cpos.s == 0)
-					cpos = TrimerPos(cpos.x + 1, cpos.y - 1, 1);
+					cpos = TrimerPos(cpos.x, cpos.y - 1, 1);
 				else
-					cpos = TrimerPos(cpos.x + 1, cpos.y, 0);
+					cpos = TrimerPos(cpos.x + 1, cpos.y - 1, 0);
 				break;
 			}
 
@@ -853,46 +917,38 @@ struct Sample
 		return tot;
 	}
 
-	std::vector<int> calculate_winding_numbers() const
+	std::tuple<int, int, int, int> calculate_topo_sector() const
 	{
-		std::vector<int> ret;
+		int wa = calculate_winding_number(TrimerPos(0, 0, 0), 0);
+		int wb = calculate_winding_number(TrimerPos(2, 0, 0), 1);
+		int wc = calculate_winding_number(TrimerPos(1, 0, 0), 0);
+		int wd = calculate_winding_number(TrimerPos(0, 0, 0), 1);
 
-		for (int startx = 0; startx < 3; startx++)
-			for (int dir = 0; dir < 3; dir++)
-				ret.push_back(calculate_winding_number(TrimerPos(startx, 0, 0), dir));
-
-		return ret;
+		int ri = (wa - wb) / 3, rj = (2 * wa + wb) / 3;
+		int gi = (wc - wd) / 3, gj = (2 * wc + wd) / 3;
+		return std::make_tuple(ri, rj, gi, gj);
 	}
 
-	using Cascader = std::function<double(const InteractionCount&, double, double)>;
-	static Cascader boltzmann_cascader()
-	{
-		return [](const InteractionCount& interactions, double u, double j4) {
-			double u_factor = interactions.u != 0 ? u * interactions.u : 0;
-			double j4_factor = interactions.j4 != 0 ? j4 * interactions.j4 : 0;
-
-			return 1 - std::exp(-(u_factor + j4_factor));
-		};
-	}
-
-	template <typename Rng> void pocket_move(Rng& rng, double u, double j4, Cascader cascader)
+	template <typename Rng> void pocket_move(Rng& rng, double u, double j4)
 	{
 		calculate_energy();
 
 		MonomerPos symc;
 		int syma;
+		bool symmetry_is_involute = false;
 
 		TrimerPos seed(0, 0, 2);
 		while (seed.s == 2)
 		{
 			uint candidate = (uint)(rng() % trimer_occupations.size());
+
 			symc = MonomerPos((int)(rng() % w), (int)(rng() % h));
-			syma = (int)(rng() % 6);
+			syma = (int)(rng() % 24);
 
 			if (trimer_occupations[candidate])
 			{
 				seed = TrimerPos::from_index(candidate, w);
-				if (trimer_occupations[seed.reflect(symc, syma, w, h).index(w)])
+				if (trimer_occupations[seed.apply_symmetry(symc, syma, w, h).index(w)] && !symmetry_is_involute)
 					seed = TrimerPos(0, 0, 2);
 			}
 		}
@@ -917,7 +973,7 @@ struct Sample
 			auto el = _pocket.back();
 			_pocket.pop_back();
 
-			auto moved = el.reflect(symc, syma, w, h);
+			auto moved = el.apply_symmetry(symc, syma, w, h);
 			_Abar.push_back(moved);
 
 			_candidates.clear();
@@ -979,11 +1035,14 @@ struct Sample
 
 			for (auto& [pos, interactions] : _candidates)
 			{
-				double p_cascade = cascader(interactions, u, j4);
+				double u_factor = interactions.u != 0 ? u * interactions.u : 0;
+				double j4_factor = interactions.j4 != 0 ? j4 * interactions.j4 : 0;
+
+				double p_cascade = 1 - std::exp(-(u_factor + j4_factor));
 
 				if (p_cascade > 0 && (p_cascade >= 1 || uniform(rng) < p_cascade))
 				{
-					if (trimer_occupations[pos.reflect(symc, syma, w, h).index(w)] == false)
+					if (trimer_occupations[pos.apply_symmetry(symc, syma, w, h).index(w)] == false || !symmetry_is_involute)
 					{
 						_pocket.push_back(pos);
 						trimer_occupations[pos.index(w)] = false;
@@ -1007,6 +1066,32 @@ struct Sample
 		{
 			ASSERT((vertex_occupations[vertex.index(w)].occupations & occ.occupations) == 0)
 			vertex_occupations[vertex.index(w)].occupations |= occ.occupations;
+		}
+
+#ifdef TEST
+		auto occupations = vertex_occupations;
+		regenerate_occupation();
+		ASSERT(occupations == vertex_occupations)
+#endif
+
+		// mark dirty
+		j4_total = -1;
+		clusters_total = -1;
+	}
+
+	MonomerPos worm_flip(const MonomerPos& in)
+	{
+		return MonomerPos();
+	}
+
+	template <typename Rng> void worm_move(Rng& rng, double u)
+	{
+		TrimerPos seed(0, 0, 2);
+		while (seed.s == 2)
+		{
+			uint candidate = (uint)(rng() % trimer_occupations.size());
+			if (trimer_occupations[candidate])
+				seed = TrimerPos::from_index(candidate, w);
 		}
 
 #ifdef TEST
@@ -1185,7 +1270,7 @@ struct Sample
 		clusters_total = 0;
 	}
 
-	template <typename Rng> void load_from(std::string file, Rng& rng, int vacancies)
+	template <typename Rng> void load_from(std::string file, Rng& rng, int vacancies, int line_number=-1)
 	{
 		std::fill(trimer_occupations.begin(), trimer_occupations.end(), false);
 		std::fill(vertex_occupations.begin(), vertex_occupations.end(), Cluster());
@@ -1201,6 +1286,9 @@ struct Sample
 			lines.push_back(line);
 
 		int randline = (int)(rng() % (2 * lines.size() / 3)) + (int)lines.size() / 3;
+		if (line_number >= 0)
+			randline = line_number;
+
 		line = lines[randline];
 		std::istringstream ss(line);
 		std::string token;
@@ -1233,7 +1321,7 @@ struct Sample
 
 	template <typename Rng> void reconfigure_root3(Rng& rng, int vacancies = 0)
 	{
-		if (w != h || w % 6)
+		if (w != h || w % 3)
 			throw "";
 
 		std::fill(trimer_occupations.begin(), trimer_occupations.end(), false);
@@ -1262,6 +1350,24 @@ const std::array<std::array<MonomerPos, 6>, 2> Sample::j4_neighbor_list = {
 	std::array<MonomerPos, 6>{MonomerPos{0, 1}, {1, 0}, {0, -2}, {1, -2}, {-2, 0}, {-2, 1}},
 	{MonomerPos{0, 2}, {-1, 2}, {2, 0}, {2, -1}, {0, -1}, {-1, 0}}};
 const std::array<MonomerPos, 3> Sample::j6_neighbor_list = std::array<MonomerPos, 3>{MonomerPos{0, 2}, {2, 0}, {-2, 2}};
+
+namespace std
+{
+template <> struct hash<Sample>
+{
+	std::size_t operator()(const Sample& x) const
+	{
+		std::size_t seed = 0;
+		for (size_t i = 0; i < x.trimer_occupations.size(); i++)
+		{
+			if (x.trimer_occupations[i])
+				seed ^= std::hash<TrimerPos>()(TrimerPos::from_index((uint32_t)i, x.w))
+					+ 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		}
+		return seed;
+	}
+};
+}
 
 struct SampleDimer
 {
@@ -1488,252 +1594,6 @@ struct SampleDimer
 	}
 };
 
-struct FullEnumerator
-{
-	using Mask = std::vector<bool>;
-	using vii = std::vector<std::pair<int, int>>;
-	struct MaskShape
-	{
-		int size;
-		vii slots;
-	};
-
-	template<typename T>
-	static T rotate(const T& x, int y)
-	{
-		T ret;
-		for (int i = 0; i < (intx.size(); i++)
-			ret.push_back(x[(i + y) % x.size()]);
-		return ret;
-	}
-
-	static MaskShape shape_of(const Mask& mask)
-	{
-		if (mask.size() == 0)
-			return MaskShape{0, vii()};
-
-		if (std::all_of(mask.begin(), mask.end(), [](bool x) { return !x; }))
-		{
-			// periodic
-			return MaskShape{(int)mask.size(), vii{std::pair<int, int>{0, (int)mask.size()}}};
-		}
-
-		int shift = (int)(std::find(mask.begin(), mask.end(), true) - mask.begin());
-		vii ret;
-		int begin = -1;
-
-		for (int i = 0; i < (int)mask.size(); i++)
-		{
-			if (mask[(i + shift) % mask.size()] == 1)
-			{
-				if (begin < i - 1)
-					ret.push_back({(begin + shift + 1) % mask.size(), i - begin - 1});
-				begin = i;
-			}
-		}
-		if (begin < (int)mask.size() - 1)
-			ret.push_back({(begin + shift + 1) % mask.size(), mask.size() - begin - 1});
-
-		return MaskShape{(int)mask.size(), ret};
-	}
-
-	static Mask mask_above(const std::vector<int>& row)
-	{
-		if (row.size() == 0)
-			return Mask();
-
-		Mask places;
-		for (int i = 0; i < (int)row.size(); i++)
-		{
-			if (row[i] == 1 || row[i] == -1 || row[(i+1)%row.size()] == -1)
-				places.push_back(true);
-			else
-				places.push_back(false);
-		}
-		return places;
-	}
-
-	static bool fill_reset(const MaskShape& shape, int shift, bool periodic, int begin, std::vector<int>& row)
-	{
-		for (auto& [start, l] : shape.slots)
-		{
-			int shifted_start = (start - shift) % (int)row.size();
-			if (shifted_start + l >= begin)
-			{
-				int true_start = std::max(shifted_start, begin);
-				int true_length = shifted_start + l - true_start;
-				if (periodic && true_length % 2 == 1 && row[0] == -1)
-				{
-					if (true_length < 3)
-						return false;
-					
-					for (int i = true_start; i < shifted_start + l - 3; i += 2)
-					{
-						row[i] = 1;
-						row[i + 1] = 2;
-					}
-					row[shifted_start + l - 3] = -1;
-					row[shifted_start + l - 2] = 1;
-					row[shifted_start + l - 1] = 2;
-				}
-				else
-				{
-					for (int i = true_start; i < shifted_start + l - 1; i += 2)
-					{
-						row[i] = 1;
-						row[i + 1] = 2;
-					}
-
-					if (true_length % 2 == 1)
-						row[shifted_start + l - 1] = -1;
-				}
-			}
-		}
-		return true;
-	}
-
-	static std::vector<int> advance(const MaskShape& shape, std::vector<int> prev)
-	{
-		if (shape.slots.size() == 0)
-		{
-			if (prev.size() == 0)
-				return std::vector<int>(shape.size);
-			else
-				return std::vector<int>();
-		}
-
-		bool periodic;
-		int shift;
-		if (shape.slots[0].second == shape.size)
-		{
-			periodic = true;
-			shift = 0;
-			if (prev.size() > 0)
-			{
-				if (prev[0] == 1)
-					return rotate(prev, 1);
-				else if (prev[0] == 2)
-					prev = rotate(prev, (int)prev.size() - 1);
-			}
-		}
-		else
-		{
-			periodic = false;
-			shift = shape.slots[0].first;
-		}
-
-		if (prev.size() == 0)
-		{
-			std::vector<int> ret(shape.size);
-			fill_reset(shape, shift, periodic, 0, ret);
-			return rotate(ret, (int)ret.size() - shift);
-		}
-
-		prev = rotate(prev, shift);
-		auto ret = prev;
-
-		for (int i = (int)prev.size() - 1; i >= 0; i--)
-		{
-			if (i >= 3 && (ret[(i+1)%ret.size()] == 0 || ret[(i+1)%ret.size()] == 1) &&
-					ret[i] == 2 && ret[i-2] == 2 && (i < 4 || ret[i-4] == 2 || ret[i-4] == 0))
-			{
-				auto temp_ret = ret;
-				temp_ret[i-3] = -1;
-				temp_ret[i-2] = 1;
-				temp_ret[i-1] = 2;
-				temp_ret[i] = -1;
-				if (!fill_reset(shape, shift, periodic, i+1, temp_ret))
-					continue;
-				ret = temp_ret;
-				goto done;
-			}
-			if (i >= 2 && ret[i] == -1 && ret[i-1] == 2 &&
-				(i < 3 || ret[i-3] == 2 || ret[i-3] == 0))
-			{
-				auto temp_ret = ret;
-				temp_ret[i-2] = -1;
-				temp_ret[i-1] = 1;
-				temp_ret[i] = 2;
-				if (!fill_reset(shape, shift, periodic, i+1, temp_ret))
-					continue;
-				ret = temp_ret;
-				goto done;
-			}
-		}
-		return std::vector<int>();
-
-	done:
-		return rotate(ret, ret.size() - shift);
-	}
-
-	std::vector<bool> init_mask;
-	int height;
-	std::vector<std::pair<MaskShape, std::vector<int>> dfs;
-	FullEnumerator(int w, int h) : init_mask(w), height(h) { }
-
-	bool next_mask()
-	{
-		int ind = init_mask.size() - 1;
-		while (ind >= 0 && init_mask[ind])
-		{
-			init_mask[ind] = !init_mask[ind];
-			ind--;
-		}
-		if (ind < 0)
-			return false;
-
-		init_mask[ind] = !init_mask[ind];
-		return true;
-	}
-
-	bool next(Sample& s)
-	{
-		while (true)
-		{
-			if (dfs.size() == 0)
-			{
-				for (auto i : init_mask)
-					std::cout << i << " ";
-				std::cout << std::endl;
-
-				auto init_shape = shape_of(init_mask);
-				dfs.push_back({ init_shape, advance(init_shape, std::vector<int>()) });
-			}
-
-			while (true)
-			{
-				if (dfs.back().second.size() == 0)
-				{
-					dfs.pop_back();
-					if (dfs.size() == 0)
-						if (!next_mask())
-							return false;
-					dfs[-1].second = advance(dfs.back().first, dfs.back().second);
-					continue;
-				}
-
-				if (dfs.size() < height)
-				{
-					auto prev_shape = shape_of(mask_above(dfs.back().second));
-					auto new_row = advance(prev_shape, std::vector<int>());
-					dfs.push_back({ prev_shape, new_row });
-					continue;
-				}
-
-				if (mask_above(dfs.back().second == init_mask))
-				{
-					Sample sample;
-
-					dfs.back().second = advance(dfs.back().first, dfs.back().second);
-					return sample;
-				}
-
-				dfs.back().second = advance(dfs.back().first, dfs.back().second);
-			}
-		}
-	}
-};
-
 template <typename T> inline void write_binary(std::ostream& o, const T& t)
 {
 	o.write(reinterpret_cast<const char*>(&t), sizeof(t));
@@ -1755,7 +1615,7 @@ struct PTWorker
 	std::ofstream oforder;
 	std::ofstream ofenergy;
 	std::ofstream ofhistogram;
-	std::ofstream ofwinding;
+	std::ofstream ofsector;
 	std::ofstream ofconf;
 
 	Accumulator<double> amonomono;
@@ -1769,6 +1629,12 @@ struct PTWorker
 
 	int total_steps = 0;
 	int previous_position_output = 0;
+
+#ifdef SECTORTEST
+	std::unordered_set<std::vector<bool>> seen;
+	std::unordered_map<std::tuple<int, int, int, int>, int> occurrences;
+	// std::ofstream topoconf = std::ofstream("new-data/-1_0_0_-2_pos_12x12.dat");
+#endif
 
 	PTWorker() : options(Options()) {}
 
@@ -1825,7 +1691,7 @@ struct PTWorker
 			oforder = std::ofstream(basepath / "order.dat");
 			ofenergy = std::ofstream(basepath / "energy.dat");
 			ofhistogram = std::ofstream(basepath / "histogram.dat", std::ios::binary);
-			ofwinding = std::ofstream(basepath / "winding-histogram.dat", std::ios::binary);
+			ofsector = std::ofstream(basepath / "winding-histogram.dat", std::ios::binary);
 			ofconf = std::ofstream(basepath / "positions.dat");
 
 			amonomono =
@@ -1866,10 +1732,33 @@ struct PTWorker
 					std::swap(copy, sample);
 			}
 			else
-				sample.pocket_move(rng, u, j4, Sample::boltzmann_cascader());
+				sample.pocket_move(rng, u, j4);
+
+#ifdef SECTORTEST
+			if (!seen.contains(sample.trimer_occupations)) {
+				seen.insert(sample.trimer_occupations);
+				auto sector = sample.calculate_topo_sector();
+				occurrences[sector]++;
+
+				// if (ri == -1 && rj == 0 && gi == 0 && gj == -2) {
+				// 	for (uint j = 0; j < sample.trimer_occupations.size(); j++)
+				// 		if (sample.trimer_occupations[j])
+				// 			topoconf << TrimerPos::from_index(j, sample.w) << " ";
+				// 	topoconf << std::endl;
+				// }
+			}
+#endif
 		}
 
+#ifdef SECTORTEST
 		total_steps += options.decorr_interval;
+		for (auto& [k, v] : occurrences) {
+			std::cout << "(" << std::get<0>(k) << "," << std::get<1>(k) << "," << std::get<2>(k) << "," << std::get<3>(k) << "):" << v << ", ";
+		}
+		std::cout << std::endl;
+		sample.calculate_energy();
+		std::cout << seen.size() << " " << sample.clusters_total << std::endl;
+#endif
 
 		auto end1 = std::chrono::high_resolution_clock::now();
 		sample.calculate_energy();
@@ -1923,11 +1812,13 @@ struct PTWorker
 
 			if (options.out_winding_histogram)
 			{
-				write_binary<float>(ofwinding, (float)energy);
-				auto windings = sample.calculate_winding_numbers();
-				for (int i = 0; i < 9; i++)
-					write_binary<int16_t>(ofwinding, (int16_t)windings[i]);
-				ofwinding.flush();
+				write_binary<float>(ofsector, (float)energy);
+				auto sector = sample.calculate_topo_sector();
+				write_binary<int16_t>(ofsector, (int16_t)std::get<0>(sector));
+				write_binary<int16_t>(ofsector, (int16_t)std::get<1>(sector));
+				write_binary<int16_t>(ofsector, (int16_t)std::get<2>(sector));
+				write_binary<int16_t>(ofsector, (int16_t)std::get<3>(sector));
+				ofsector.flush();
 			}
 
 			timings[1] = (double)std::chrono::duration_cast<std::chrono::microseconds>(end2 - end1).count();
@@ -2173,7 +2064,7 @@ struct MuCaWorker
 		{
 			sample.calculate_energy();
 			Sample copy = sample;
-			copy.pocket_move(rng, infinity, 0, Sample::boltzmann_cascader());
+			copy.pocket_move(rng, infinity, 0);
 			copy.calculate_energy();
 
 			if (copy.j4_total > max_energy)
@@ -2585,7 +2476,7 @@ void test_pocket()
 	std::minstd_rand rng;
 	sample.reconfigure_brick_wall(rng);
 	for (int i = 0; i < 100; i++)
-		sample.pocket_move(rng, 1, 0.01, Sample::boltzmann_cascader());
+		sample.pocket_move(rng, 1, 0.01);
 
 	std::cout << "pocket test passed" << std::endl;
 }
@@ -2594,12 +2485,26 @@ void test_brickwall()
 {
 	Sample sample(48, 48);
 	std::minstd_rand rng;
-	for (int i = 0; i < 20; i++)
+	for (int i = 0; i < 3; i++)
 	{
-		sample.reconfigure_brick_wall(rng);
+		for (int j = 0; j < 20; j++)
+			sample.reconfigure_brick_wall(rng);
+
 		sample.calculate_energy();
 		TEST_ASSERT2(sample.j4_total == 48 * 48 / 2, sample.j4_total)
 	}
+}
+
+void test_symmetry()
+{
+	int w = 12;
+	std::vector<bool> occupancies(w * w * 2);
+	for (int i = 0; i < w; i++)
+		for (int j = 0; j < w; j++)
+			for (int s = 0; s < 2; s++)
+				occupancies[TrimerPos(i, j, s).apply_symmetry(MonomerPos(1, 2), 7, w, w).index(w)] = true;
+
+	TEST_ASSERT(std::find(occupancies.begin(), occupancies.end(), false) == occupancies.end());
 }
 
 #ifndef TEST
@@ -2610,5 +2515,6 @@ int main()
 	test_optimizer();
 	test_pocket();
 	test_brickwall();
+	test_symmetry();
 }
 #endif
