@@ -459,6 +459,32 @@ def show_positions_dimer(ax, positions):
     ax.set_ylim([10, 30])
     ax.set_aspect("equal")
 
+def show_positions_dimer_hex(ax, positions):
+    positions = set(positions)
+    width = max(x for x, y, s in positions)+1
+    height = max(y for x, y, s in positions)+1
+
+    draw_hexalattice(ax, width, height)
+
+    lines = []
+    for x, y, s in positions:
+        p1 = trimer_coords(x, y, 0)
+
+        if s == 0:
+            p2 = trimer_coords(x, y, 1)
+        elif s == 1:
+            p2 = trimer_coords(x-1, y, 1)
+        elif s == 2:
+            p2 = trimer_coords(x, y-1, 1)
+
+        lines.append([p1, p2])
+    ax.add_collection(matplotlib.collections.LineCollection(lines, color="black", lw=3, ls="-", zorder=2))
+
+    ax.axis("off")
+    ax.set_xlim([10, 50])
+    ax.set_ylim([10, 30])
+    ax.set_aspect("equal")
+
 def read_accumulator(fname, skip=0, take=None):
     state = "count"
     total = 0
