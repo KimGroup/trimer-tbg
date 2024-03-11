@@ -16,14 +16,15 @@
 
 #include "geom.h"
 
-#ifdef TEST
 void assert_fail() { std::exit(0); }
+
 #define ASSERT(x)                                                                                                      \
 	if (!(x))                                                                                                          \
 	{                                                                                                                  \
 		std::cout << "assertion failed at " << __LINE__ << std::endl;                                                  \
 		assert_fail();                                                                                                 \
 	}
+#ifdef TEST
 #define TEST_ASSERT(x)                                                                                                 \
 	if (!(x))                                                                                                          \
 	{                                                                                                                  \
@@ -36,9 +37,7 @@ void assert_fail() { std::exit(0); }
 		std::cout << "test failed at " << __LINE__ << " " << #x << "; " << (y) << std::endl;                           \
 		assert_fail();                                                                                                 \
 	}
-
 #else
-#define ASSERT(x) (x);
 #define TEST_ASSERT(x) (x);
 #define TEST_ASSERT2(x, y) (x);
 #endif
@@ -361,9 +360,17 @@ public:
 		return length;
 	}
 
+	/*
+	pos: the current position of the defect that will be moved by this function
+	moving: the location of the floating bond that will be committed into the occupancy list
+	move_from: the location of the bond that will be moved by this function and stored into `moving`
+	direction: the index of `move_from` wrt `pos` according to geom::get_bonds()
+	*/
 	template<typename Rng>
-	void worm_flip(Rng& rng, vertex_t& pos, bond_t& moving, const bond_t& move_from, int direction)
+	void worm_flip(Rng& rng, vertex_t& pos, bond_t& moving, const bond_t& move_from, int direction, bool allow_bounce)
 	{
+		const bond_t move_from
+
 		ASSERT(cfg.bond_occ[move_from.index(w)]);
 		cfg.bond_occ[move_from.index(w)] = false;
 		change_j4_bonds(move_from, -1);
@@ -375,44 +382,36 @@ public:
 			change_j4_bonds(moving, 1);
 		}
 
+		const auto& flips = geom.get_flips(pos, direction);
+
 		int flipdir = 0;
+		if (flips.size() > 1)
+			flipdir = (int) (rng() % flips.size());
 
-		constexpr int ndir = std::tuple_size<typename std::remove_reference<decltype(geom.vertex_flips[0])>::type>::value;
-		if constexpr (ndir > 1)
-			flipdir = (int) (rng() % ndir);
-
-		moving = geom.principal(geom.bond_flips[direction][flipdir] + pos);
-
-		if (cfg.bond_occ[moving.index(w)])
-			// hit a hard-core constraint; force reversal
-			moving = move_from;
-		else
-		{
-			pos = geom.principal(geom.vertex_flips[direction][flipdir] + pos);
-		}
+		moving = flips[flipdir].second;
+		pos = flips[flipdir].first;
 	}
 
-	template<typename Rng> void worm_init(Rng& rng, vertex_t& cur_pos, bond_t& moving, const bond_t& move_from)
+	template<typename Rng> vertex_t worm_init(Rng& rng, bond_t start, bond_t& moving)
 	{
-		auto vertices = geom.get_vertices(move_from);
-		int prev_dir = -1;
-		for (int i = 0; i < (int) vertices.size(); i++)
-			if (vertices[i] == cur_pos)
-				prev_dir = i;
+		vertex_t pos;
 
-		int dir;
-		if (prev_dir == -1)
-			dir = (int) (rng() % vertices.size());
-		else
-			dir = (int) (((rng() % (vertices.size() - 1)) + prev_dir) % vertices.size());
+		auto& vertices = geom.get_vertices(start);
+		int dir = (int) (rng() % vertices.size());
 		
 		// start the chain and remove a charge
-		cur_pos = vertices[dir];
+		pos = vertices[dir];
 		cfg.vertex_occ[cur_pos.index(w)]--;
 		cfg.clusters_total -= cfg.vertex_occ[cur_pos.index(w)];
 
+		// figure out the position of the bond relative to the vertex
+		auto& bonds = geom.get_bonds(pos);
+		auto mono_dir = std::find(pos.begin(), pos.end(), start);
+
+		ASSERT(mono_dir != pos.end());
+
 		// set the correct direction for the flip based on which vertex was chosen
-		worm_flip(rng, cur_pos, moving, move_from, dir * 2 + move_from.s);
+		worm_flip(rng, cur_pos, moving, start, mono_dir);
 	}
 
 	template<typename Rng> int worm_move(Rng& rng, double u)
@@ -427,13 +426,10 @@ public:
 				seed = bond_t::from_index(candidate, w);
 		}
 
-		// init to invalid value so that worm_init does not exclude any direction
-		vertex_t pos(-1, -1);
-
 		// holds the temporary position of the moving trimer
 		bond_t moving(0, 0, -1);
 
-		worm_init(rng, pos, moving, seed);
+		vertex_t pos = worm_init(rng, pos, moving, seed);
 
 		std::uniform_real_distribution<> uniform(0., 1.);
 		int length = 0;
@@ -444,26 +440,41 @@ public:
 		{
 			length++;
 
-			ASSERT(!cfg.bond_occ[moving.index(w)]);
+			if (!cfg.bond_occ[moving.index(w)])
+			{
+				// no hard-core constraint
+				int occupation = cfg.vertex_occ[pos.index(w)];
+				double p_continue = 1 - std::exp(-u * occupation);
 
-			int occupation = cfg.vertex_occ[pos.index(w)];
-			double p_continue = 1 - std::exp(-u * occupation);
-			if (occupation < 1 || uniform(rng) > p_continue)
-				break;
-			
-			found_directions.clear();
-			auto trimers = geom.get_bonds(pos);
+				if (occupation < 1 || uniform(rng) > p_continue)
+					break;
+				
+				found_directions.clear();
+				auto trimers = geom.get_bonds(pos);
 
-			for (int i = 0; i < (int) trimers.size(); i++)
-				if (cfg.bond_occ[trimers[i].index(w)])
-					found_directions.push_back(i);
+				for (int i = 0; i < (int) trimers.size(); i++)
+					if (cfg.bond_occ[trimers[i].index(w)])
+						found_directions.push_back(i);
 
-			ASSERT(found_directions.size() == (size_t) occupation);
+				ASSERT(found_directions.size() == (size_t) occupation);
 
-			int new_dir = found_directions[rng() % found_directions.size()];
-			const auto& chosen_trimer = trimers[new_dir];
+				int new_dir = found_directions[rng() % found_directions.size()];
+				const auto& chosen_trimer = trimers[new_dir];
 
-			worm_flip(rng, pos, moving, chosen_trimer, new_dir);
+				worm_flip(rng, pos, moving, chosen_trimer, new_dir);
+			}
+			else
+			{
+				// hard-core constraint; force the next chosen bond to be this one
+				#warning TODO
+
+				auto trimers = geom.get_bonds(pos);
+				auto found = std::find(trimers.begin(), trimers.end(), moving);
+
+				ASSERT(found != trimers.end());
+
+				worm_flip(rng, pos, moving, moving, found - trimers.begin());
+			}
 		}
 
 		ASSERT(!cfg.bond_occ[moving.index(w)]);
@@ -472,7 +483,6 @@ public:
 
 		cfg.clusters_total += cfg.vertex_occ[pos.index(w)];
 		cfg.vertex_occ[pos.index(w)]++;
-
 
 #ifdef TEST
 		int oldj4 = cfg.j4_total;

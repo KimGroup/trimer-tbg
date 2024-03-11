@@ -608,23 +608,23 @@ def get_all_curves(globs, prop="cv", bounds=None, skip=0, take=None, by="l"):
             nprops, nds = get_all_cvs(glob, skip=skip, by="fname")
         elif prop == "e":
             nprops, nds = get_all_energies(glob, skip=skip, by="fname")
-        elif prop == "eb":
+        elif prop == "b_e":
             nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][4]/3/data[0][3]**2, skip=skip, by="fname")
         elif prop == "k":
             nprops, nds = get_all_data(glob, lambda data, props: data[0][3]/props["n"], skip=skip, by="fname")
-        elif prop == "ksus":
+        elif prop == "chi_k":
             nprops, nds = get_all_data(glob, lambda data, props: data[1][3]**2/props["t"]/props["n"], skip=skip, by="fname")
-        elif prop == "kb":
+        elif prop == "b_k":
             nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][5]/2/data[0][4]**2, skip=skip, by="fname")
         elif prop == "s":
             nprops, nds = get_all_data(glob, lambda data, props: data[0][8]/props["n"], skip=skip, by="fname")
-        elif prop == "ssus":
+        elif prop == "chi_s":
             nprops, nds = get_all_data(glob, lambda data, props: data[1][8]**2/props["t"]/props["n"], skip=skip, by="fname")
-        elif prop == "sb":
+        elif prop == "b_s":
             nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][10]/3/data[0][9]**2, skip=skip, by="fname")
         elif prop == "m":
             nprops, nds = get_all_data(glob, lambda data, props: data[0][0]/props["n"], skip=skip, by="fname")
-        elif prop == "mb":
+        elif prop == "b_m":
             nprops, nds = get_all_data(glob, lambda data, props: 1-data[0][2]/2/data[0][1]**2, skip=skip, by="fname")
         elif prop == "mono":
             nprops, nds = get_all_data(glob, lambda data, props: data[0][0]/props["n"], skip=skip, by="fname")

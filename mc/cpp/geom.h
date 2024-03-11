@@ -233,7 +233,6 @@ struct TrimerTriangularGeometry : public TriangularGeometry
 	{
 		std::array<bond_t, 6> r;
 
-#pragma GCC unroll 6
 		for (int i = 0; i < 6; i++)
 			r[i] = principal(vertex_trimers[i] + pos);
 
@@ -257,6 +256,14 @@ struct TrimerTriangularGeometry : public TriangularGeometry
 		std::array<bond_t, 1>{ bond_t{0, -2, 1} },
 		std::array<bond_t, 1>{ bond_t{1, -1, 0} },
 	};
+
+	auto get_flips(const vertex_t& vtx, int bond_index)
+	{
+		std::array<std::pair<vertex_t, bond_t>, 1> ret;
+		ret[0] = std::make_pair(principal(vertex_flips[bond_index][0] + vtx), principal(bond_flips[bond_index][0] + vtx));
+
+		return ret;
+	}
 
 	static constexpr bool has_j4() { return true; }
 
@@ -329,7 +336,6 @@ struct DimerHexagonalSkewGeometry : public TriangularGeometry
 	{
 		std::array<bond_t, 3> r;
 
-#pragma GCC unroll 3
 		for (int i = 0; i < 3; i++)
 			r[i] = principal(vertex_dimers[pos.s][i] + pos.lattice_pos());
 
@@ -357,6 +363,45 @@ struct DimerHexagonalSkewGeometry : public TriangularGeometry
         p = reflect(p, index);
 
 		return principal(p + c);
+	}
+
+	std::array<std::array<std::array<vertex_t, 2>, 3>, 2> vertex_flips = {
+		std::array<std::array<vertex_t, 2>, 3>{
+			std::array<vertex_t, 2>{ vertex_t{0, 1, 0}, {1, 0, 0} },
+			std::array<vertex_t, 2>{ vertex_t{-1, 0, 0}, {-1, 1, 0} },
+			std::array<vertex_t, 2>{ vertex_t{1, -1, 0}, {0, -1, 0} },
+		},
+		std::array<std::array<vertex_t, 2>, 3>{
+			std::array<vertex_t, 2>{ vertex_t{-1, 1, 1}, {0, 1, 1} },
+			std::array<vertex_t, 2>{ vertex_t{0, -1, 1}, {-1, 0, 1} },
+			std::array<vertex_t, 2>{ vertex_t{1, 0, 1}, {1, -1, 1} },
+		},
+	};
+
+	std::array<std::array<std::array<bond_t, 2>, 3>, 2> bond_flips = {
+		std::array<std::array<bond_t, 2>, 3>{
+			std::array<bond_t, 2>{ bond_t{0, 1, 2}, {1, 0, 1} },
+			std::array<bond_t, 2>{ bond_t{-1, 0, 0}, {-1, 1, 2} },
+			std::array<bond_t, 2>{ bond_t{1, -1, 1}, {0, -1, 0} },
+		},
+		std::array<std::array<bond_t, 2>, 3>{
+			std::array<bond_t, 2>{ bond_t{0, 1, 1}, {0, 1, 0} },
+			std::array<bond_t, 2>{ bond_t{0, 0, 2}, {0, 0, 1} },
+			std::array<bond_t, 2>{ bond_t{1, 0, 0}, {1, 0, 2} },
+		},
+	};
+
+	auto get_flips(const vertex_t& vtx, int bond_index)
+	{
+		std::array<std::pair<vertex_t, bond_t>, 2> ret;
+
+		for (int i = 0; i < 2; i++)
+			ret[0] = std::make_pair(
+				principal(vertex_flips[vtx.s][bond_index][i] + vtx.lattice_pos()),
+				principal(bond_flips[vtx.s][bond_index][i] + vtx.lattice_pos())
+			);
+
+		return ret;
 	}
 
 	static constexpr bool has_j4() { return false; }
@@ -435,11 +480,34 @@ struct DimerSquareGeometry
 	{
 		std::array<bond_t, 4> r;
 
-#pragma GCC unroll 4
 		for (int i = 0; i < 4; i++)
 			r[i] = principal(vertex_dimers[i] + pos);
 
 		return r;
+	}
+
+	std::array<std::array<vertex_t, 3>, 4> vertex_flips = {
+		std::array<vertex_t, 3>{ vertex_t{1, 1}, {2, 0}, {1, -1} },
+		std::array<vertex_t, 3>{ vertex_t{-1, 1}, {0, 2}, {1, 2} },
+		std::array<vertex_t, 3>{ vertex_t{-1, -1}, {-2, 0}, {-1, 1} },
+		std::array<vertex_t, 3>{ vertex_t{1, -1}, {0, -2}, {-1, -1} },
+	};
+
+	std::array<std::array<bond_t, 3>, 4> bond_flips = {
+		std::array<bond_t, 3>{ bond_t{1, 0, 1}, {1, 0, 0}, {1, -1, 1} },
+		std::array<bond_t, 3>{ bond_t{-1, 1, 0}, {0, 1, 1}, {0, 1, 0} },
+		std::array<bond_t, 3>{ bond_t{-1, -1, 1}, {-2, 0, 0}, {-1, 0, 1} },
+		std::array<bond_t, 3>{ bond_t{0, -1, 0}, {0, -2, 1}, {-1, -1, 0} },
+	};
+
+	auto get_flips(const vertex_t& vtx, int bond_index)
+	{
+		std::array<std::pair<vertex_t, bond_t>, 3> ret;
+
+		for (int i = 0; i < 3; i++)
+			ret[0] = std::make_pair(principal(vertex_flips[bond_index][i] + vtx), principal(bond_flips[bond_index][i] + vtx));
+
+		return ret;
 	}
 
 	static constexpr bool has_j4() { return false; }
