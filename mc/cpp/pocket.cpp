@@ -14,6 +14,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "geom.h"
+
 #ifdef TEST
 void assert_fail() { std::exit(0); }
 #define ASSERT(x)                                                                                                      \
@@ -25,305 +27,28 @@ void assert_fail() { std::exit(0); }
 #define TEST_ASSERT(x)                                                                                                 \
 	if (!(x))                                                                                                          \
 	{                                                                                                                  \
-		std::cout << "test failed at " << __LINE__ << #x << std::endl;                                                 \
+		std::cout << "test failed at " << __LINE__ << " " << #x << std::endl;                                          \
 		assert_fail();                                                                                                 \
-	}                                                                                                                  \
-	else                                                                                                               \
-	{                                                                                                                  \
-		std::cout << "test passed at " << __LINE__ << #x << std::endl;                                                 \
 	}
 #define TEST_ASSERT2(x, y)                                                                                             \
 	if (!(x))                                                                                                          \
 	{                                                                                                                  \
-		std::cout << "test failed at " << __LINE__ << #x << "; " << (y) << std::endl;                                  \
+		std::cout << "test failed at " << __LINE__ << " " << #x << "; " << (y) << std::endl;                           \
 		assert_fail();                                                                                                 \
-	}                                                                                                                  \
-	else                                                                                                               \
-	{                                                                                                                  \
-		std::cout << "test passed at " << __LINE__ << #x << "; " << (y) << std::endl;                                  \
 	}
 
 #else
-#define ASSERT(x)
-#define TEST_ASSERT(x)
-#define TEST_ASSERT2(x, y)
+#define ASSERT(x) (x);
+#define TEST_ASSERT(x) (x);
+#define TEST_ASSERT2(x, y) (x);
 #endif
 
-int32_t pmod(int32_t a, int32_t b)
-{
-	int32_t m = a % b;
-	if (m < 0) m += b;
-	return m;
-}
 
 const double infinity = std::numeric_limits<double>::infinity();
 using complex = std::complex<double>;
 
-struct VertexPos
-{
-	int32_t x, y;
-
-	VertexPos() : x(0), y(0) {}
-	VertexPos(int32_t x, int32_t y) : x(x), y(y) {}
-
-	VertexPos rotate(int dir)
-	{
-		switch (pmod(dir, 6))
-		{
-		default:
-		case 0:
-			return VertexPos(x, y);
-		case 1:
-			return VertexPos(-y, x + y);
-		case 2:
-			return VertexPos(-x - y, x);
-		case 3:
-			return VertexPos(-x, -y);
-		case 4:
-			return VertexPos(y, -x - y);
-		case 5:
-			return VertexPos(x + y, -x);
-		}
-	}
-
-	VertexPos canonical(int32_t w, int32_t h) const { return VertexPos(pmod(x, w), pmod(y, h)); }
-	VertexPos center_at(VertexPos pos, int32_t w, int32_t h) const
-	{
-		return VertexPos(pmod(x - pos.x + w / 2, w) - w / 2, pmod(y - pos.y + h / 2, h) - h / 2);
-	}
-
-	uint32_t index(int w) const { return x + y * w; }
-	static VertexPos from_index(uint32_t index, int w) { return VertexPos(index % w, index / w); }
-
-	VertexPos operator-() const { return VertexPos(-x, -y); }
-	VertexPos operator-(const VertexPos& other) const { return VertexPos(x - other.x, y - other.y); }
-	VertexPos operator+(const VertexPos& other) const { return VertexPos(x + other.x, y + other.y); }
-	bool operator==(const VertexPos& other) const { return x == other.x && y == other.y; }
-};
-
-struct BondPos
-{
-	int32_t x, y;
-	int8_t s;
-
-	BondPos() : x(0), y(0), s(0) {}
-	BondPos(int x, int y, int s) : x(x), y(y), s((int8_t)s) {}
-
-	VertexPos mono_pos() const { return VertexPos(x, y); }
-
-	// rotate around the plaquette at (0, 0)
-	BondPos rotate(int dir)
-	{
-		VertexPos p = VertexPos(x, y);
-		switch (pmod(dir, 6))
-		{
-		case 0:
-			return *this;
-		case 1:
-			p = p.rotate(1);
-			return !s ? BondPos(p.x-1, p.y, 1) : BondPos(p.x-1, p.y+1, 0);
-		case 2:
-			p = p.rotate(2);
-			return !s ? BondPos(p.x-1, p.y, 0) : BondPos(p.x-2, p.y, 1);
-		case 3:
-			p = p.rotate(3);
-			return !s ? BondPos(p.x-1, p.y-1, 1) : BondPos(p.x-1, p.y-1, 0);
-		case 4:
-			p = p.rotate(4);
-			return !s ? BondPos(p.x, p.y-1, 0) : BondPos(p.x, p.y-2, 1);
-		case 5:
-			p = p.rotate(5);
-			return !s ? BondPos(p.x, p.y-1, 1) : BondPos(p.x+1, p.y-1, 0);
-		default:
-			return *this;
-		}
-	}
-
-	BondPos reflect(int dir) const
-	{
-		// Reflect about the vertex (0,0)
-		switch (dir)
-		{
-		case 0:
-			return !s ? BondPos(x+y, -y-1, 1) : BondPos(x+y+1, -y-1, 0);
-		case 1:
-			return !s ? BondPos(y, x, 0) : BondPos(y, x, 1);
-		case 2:
-			return !s ? BondPos(-x-1, y+x, 1) : BondPos(-x- 1, y+x+1, 0);
-		case 3:
-			return !s ? BondPos(-x-y-1, y, 0) : BondPos(-x-y-2, y, 1);
-		case 4:
-			return !s ? BondPos(-y-1, -x-1, 1) : BondPos(-y - 1, -x-1, 0);
-		case 5:
-			return !s ? BondPos(x, -y-x-1, 0) : BondPos(x, -y-x-2, 1);
-		default:
-			return *this;
-		}
-	}
-
-	BondPos apply_symmetry(VertexPos center, int index, int w, int h) const
-	{
-		auto p = center_at(center, w, h);
-
-		if (index < 12)
-			p = p.reflect(index % 6);
-		else if (index < 17)
-			p = p.rotate(index % 6 + 1);
-		else if (index == 17)
-			// pi rotation 1
-			p = BondPos(-p.x, -p.y, 1-p.s);
-		else if (index == 18)
-			// pi rotation 2
-			p = BondPos(-p.x-1, -p.y, 1-p.s);
-		else if (index == 19)
-			// pi rotation 3
-			p = BondPos(-p.x, -p.y-1, 1-p.s);
-		else if (index == 20)
-			// 2pi/3 around A
-			p = BondPos(-p.x-p.y-p.s, p.x, p.s);
-		else if (index == 21)
-			// -2pi/3 around A
-			p = BondPos(p.y, -p.x-p.y-p.s, p.s);
-		else if (index == 22)
-			// 2pi/3 around B
-			p = BondPos(-p.x-p.y+1-p.s, p.x, p.s);
-		else if (index == 23)
-			// -2pi/3 around B
-			p = BondPos(p.y, -p.x-p.y+1-p.s, p.s);
-
-		return BondPos(center.x + p.x, center.y + p.y, p.s).canonical(w, h);
-	}
-
-	BondPos canonical(int32_t w, int32_t h) const { return BondPos(pmod(x, w), pmod(y, h), s); }
-	BondPos center_at(VertexPos pos, int32_t w, int32_t h) const
-	{
-		return BondPos(pmod(x - pos.x + w / 2, w) - w / 2, pmod(y - pos.y + h / 2, h) - h / 2, s);
-	}
-
-	uint32_t index(int w) const { return (x + y * w) * 2 + s; }
-	static BondPos from_index(uint32_t index, int w)
-	{
-		uint32_t half = index / 2;
-		return BondPos(half % w, half / w, index % 2);
-	}
-
-	bool operator==(const BondPos& other) const { return x == other.x && y == other.y && s == other.s; }
-	BondPos operator+(const VertexPos& other) const { return BondPos(x + other.x, y + other.y, s); }
-};
-
-struct DimerGeometryProvider
-{
-	std::array<VertexPos, 2> get_vertices(BondPos pos, int w, int h) const
-	{
-		std::array<VertexPos, 2> r;
-		r[0] = {pos.x, pos.y};
-
-		if (pos.s == 0)
-			r[1] = {pos.x + 1, pos.y};
-		else
-			r[1] = {pos.x, pos.y + 1};
-
-		
-		r[0] = r[0].canonical(w, h);
-		r[1] = r[1].canonical(w, h);
-
-		return r;
-	}
-
-	std::array<BondPos, 4> vertex_dimers = {
-		BondPos{0, 0, 0}, {0, 0, 1}, {-1, 0, 0}, {0, -1, 1}
-	};
-
-	std::array<BondPos, 4> get_bonds(VertexPos pos, int w, int h) const
-	{
-		std::array<BondPos, 4> r;
-
-		for (int i = 0; i < 4; i++)
-			r[i] = (vertex_dimers[i] + pos).canonical(w, h);
-
-		return r;
-	}
-};
-
-struct TrimerGeometryProvider
-{
-	std::array<VertexPos, 3> get_vertices(BondPos pos, int w, int h) const
-	{
-		std::array<VertexPos, 3> r;
-
-		if (pos.s == 0)
-		{
-			r[0] = {pos.x, pos.y};
-			r[1] = {pos.x + 1, pos.y};
-			r[2] = {pos.x, pos.y + 1};
-		}
-		else
-		{
-			r[0] = {pos.x + 1, pos.y};
-			r[1] = {pos.x + 1, pos.y + 1};
-			r[2] = {pos.x, pos.y + 1};
-		}
-
-		r[0] = r[0].canonical(w, h);
-		r[1] = r[1].canonical(w, h);
-		r[2] = r[2].canonical(w, h);
-
-		return r;
-	}
-
-	std::array<BondPos, 6> vertex_trimers = {
-		BondPos{0, 0, 0}, {-1, 0, 1}, {-1, 0, 0},
-		{-1, -1, 1}, {0, -1, 0}, {0, -1, 1}
-	};
-
-	std::array<BondPos, 6> get_bonds(VertexPos pos, int w, int h) const
-	{
-		std::array<BondPos, 6> r;
-
-		for (int i = 0; i < 6; i++)
-			r[i] = (vertex_trimers[i] + pos).canonical(w, h);
-
-		return r;
-	}
-
-	std::array<VertexPos, 6> mono_flips = {
-		VertexPos{1, 1}, {-1, 2}, {-2, 1}, {-1, -1}, {1, -2}, {2, -1}
-	};
-	std::array<BondPos, 6> tri_flips = {
-		BondPos{0, 0, 1}, {-1, 1, 0}, {-2, 0, 1},
-		{-1, -1, 0}, {0, -2, 1}, {1, -1, 0}
-	};
-
-	std::array<std::array<VertexPos, 6>, 2> j4_neighbor_list = {
-		std::array<VertexPos, 6>{VertexPos{0, 1}, {1, 0}, {0, -2}, {1, -2}, {-2, 0}, {-2, 1}},
-		{VertexPos{0, 2}, {-1, 2}, {2, 0}, {2, -1}, {0, -1}, {-1, 0}}};
-
-	std::array<VertexPos, 3> j6_neighbor_list = std::array<VertexPos, 3>{
-		VertexPos{0, 2}, {2, 0}, {-2, 2}
-	};
-};
-
 namespace std
 {
-template <> struct hash<VertexPos>
-{
-	std::size_t operator()(const VertexPos& x) const
-	{
-		std::size_t seed = std::hash<int32_t>()(x.x);
-		seed ^= std::hash<int32_t>()(x.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		return seed;
-	}
-};
-template <> struct hash<BondPos>
-{
-	std::size_t operator()(const BondPos& x) const
-	{
-		std::size_t seed = std::hash<int32_t>()(x.x);
-		seed ^= std::hash<int32_t>()(x.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<int32_t>()(x.s) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		return seed;
-	}
-};
 template <> struct hash<tuple<int, int, int, int>>
 {
 	std::size_t operator()(const tuple<int, int, int, int>& x) const
@@ -337,13 +62,502 @@ template <> struct hash<tuple<int, int, int, int>>
 };
 } // namespace std
 
-std::ostream& operator<<(std::ostream& o, const VertexPos& v) { return o << "(" << v.x << "," << v.y << ")"; }
-std::ostream& operator<<(std::ostream& o, const BondPos& v)
+struct Options
 {
-	return o << "(" << v.x << "," << v.y << "," << (int)v.s << ")";
-}
+	int domain_length;
+	int mono_vacancies = 0;
 
-template <typename T> struct Accumulator
+	bool out_monomono = false;
+	bool out_clustercount = false;
+	bool out_monodi = false;
+	bool out_tritri = false;
+	bool out_energy = false;
+	bool out_histogram = false;
+	bool out_winding_histogram = false;
+	bool out_order = false;
+
+	bool idealbrickwall = false;
+	bool idealrt3 = false;
+	bool metropolis = false;
+	bool init_random = false;
+
+	bool multicanonical = false;
+	int multicanonical_rounds = 10;
+	int multicanonical_round_length = 100000;
+	int multicanonical_threads = 1;
+	double multicanonical_factor_decay = 0.7;
+	double multicanonical_init_factor = 0.03;
+	int multicanonical_swap_interval = 5;
+
+	int position_interval = 50000;
+	int total_steps = 0;
+	int decorr_interval = 1;
+	int accumulator_interval = 0;
+	int swap_interval = 10;
+	int adaptation_interval = 500;
+	int adaptation_duration = 500000;
+
+	double j4 = 0;
+	double u = infinity;
+	std::vector<double> temperatures;
+	bool adaptive_pt = false;
+
+	std::string directory;
+
+	double pocket_fraction = 0.75;
+};
+
+template<typename Geometry>
+struct Sample
+{
+	using geom_t = Geometry;
+	using vertex_t = Geometry::vertex_t;
+	using bond_t = Geometry::bond_t;
+
+	struct InteractionCount
+	{
+		int u = 0;
+		int j4 = 0;
+		int hard_core = 0;
+	};
+
+private:
+	std::vector<bond_t> _pocket, _Abar;
+	std::unordered_map<bond_t, InteractionCount> _candidates;
+
+public:
+	int32_t w, h;
+	Geometry geom;
+
+	struct Configuration
+	{
+		std::vector<bool> bond_occ;
+		std::vector<uint8_t> vertex_occ;
+		int j4_total, clusters_total;
+	};
+
+	Configuration cfg;
+
+	Sample() : w(0), h(0), geom(0, 0)
+	{
+		cfg.j4_total = 0;
+		cfg.clusters_total = 0;
+	}
+
+	Sample(int32_t w, int32_t h) : w(w), h(h), geom(w, h)
+	{
+		cfg.bond_occ = std::vector<bool>(w * h * bond_t::unit_cell_size(), false);
+		cfg.vertex_occ = std::vector<uint8_t>(w * h * vertex_t::unit_cell_size(), 0);
+		cfg.j4_total = 0;
+		cfg.clusters_total = 0;
+	}
+
+	Sample(int32_t w, int32_t h, const std::vector<bond_t>& bonds) : Sample(w, h)
+	{
+		for (auto& i : bonds)
+			cfg.bond_occ[i.index(w)] = true;
+
+		cfg.j4_total = -1;
+		cfg.clusters_total = -1;
+
+		regenerate_occupation();
+		calculate_energy();
+	}
+
+	void regenerate_occupation()
+	{
+		std::fill(cfg.vertex_occ.begin(), cfg.vertex_occ.end(), 0);
+
+		for (uint i = 0; i < cfg.bond_occ.size(); i++)
+			if (cfg.bond_occ[i])
+			{
+				auto tri = bond_t::from_index(i, w);
+				for (auto& vtx : geom.get_vertices(tri))
+					cfg.vertex_occ[vtx.index(w)]++;
+			}
+	}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
+	void change_j4_bonds(const bond_t& removed, int amount)
+	{
+#pragma GCC diagnostic pop
+		if constexpr(geom_t::has_j4())
+		{
+			for (auto& rel : geom.j4_neighbor_list[removed.s])
+				if (cfg.bond_occ[geom.principal(rel + removed.lattice_pos()).index(w)])
+					cfg.j4_total += amount;
+		}
+	}
+
+	void calculate_energy()
+	{
+		if (cfg.clusters_total >= 0 && cfg.j4_total >= 0)
+			return;
+
+		cfg.clusters_total = 0;
+		cfg.j4_total = 0;
+
+#ifdef TEST
+		int total_occ = 0;
+		for (const auto& occ : cfg.vertex_occ)
+			total_occ += occ;
+
+		for (auto i : cfg.bond_occ)
+			if (i)
+				total_occ -= (int) std::tuple_size<decltype(geom.get_vertices(bond_t()))>::value;
+
+		ASSERT(total_occ == 0);
+#endif
+
+		for (const auto& occ : cfg.vertex_occ)
+			cfg.clusters_total += occ * (occ - 1) / 2;
+
+		for (int x = 0; x < w; x++)
+			for (int y = 0; y < h; y++)
+				if (cfg.bond_occ[bond_t(x, y, 0).index(w)])
+					change_j4_bonds(bond_t(x, y, 0), 1);
+	}
+
+	void set_pocket_candidates(const bond_t& el, const bond_t& moved, double u, double j4)
+	{
+		_candidates.clear();
+
+		// hard-core constraint
+		if (cfg.bond_occ[moved.index(w)])
+			_candidates[moved].hard_core++;
+
+		// add target overlaps to candidates
+		if (u != 0)
+			for (const auto& i : geom.get_vertices(moved))
+				if (cfg.vertex_occ[i.index(w)] > 0)
+					for (const auto& trimer_pos : geom.get_bonds(i))
+						if (cfg.bond_occ[trimer_pos.index(w)])
+							_candidates[trimer_pos].u++;
+
+		// add source overlaps to candidates
+		if (u != 0 && u < infinity)
+			for (const auto& i : geom.get_vertices(el))
+				if (cfg.vertex_occ[i.index(w)] > 0)
+					for (const auto& trimer_pos : geom.get_bonds(i))
+						if (cfg.bond_occ[trimer_pos.index(w)])
+							_candidates[trimer_pos].u--;
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
+		if constexpr(geom_t::has_j4())
+#pragma GCC diagnostic pop
+		{
+			if (j4 != 0)
+			{
+				for (auto& d : geom.j4_neighbor_list[el.s])
+				{
+					auto pos = geom.principal(d + el.lattice_pos());
+					if (cfg.bond_occ[pos.index(w)])
+						_candidates[pos].j4--;
+				}
+
+				for (auto& d : geom.j4_neighbor_list[moved.s])
+				{
+					auto pos = geom.principal(d + moved.lattice_pos());
+					if (cfg.bond_occ[pos.index(w)])
+						_candidates[pos].j4++;
+				}
+			}
+		}
+	}
+
+	template<typename Rng> int pocket_move(Rng& rng, double u, double j4)
+	{
+		calculate_energy();
+
+		LatticePos symc;
+		int syma;
+		bool symmetry_is_involute = false;
+
+		bond_t seed(0, 0, -1);
+		while (seed.s == -1)
+		{
+			uint candidate = (uint)(rng() % cfg.bond_occ.size());
+
+			symc = LatticePos((int)(rng() % w), (int)(rng() % h));
+			syma = (int)(rng() % geom.n_symmetries());
+
+			if (cfg.bond_occ[candidate])
+			{
+				seed = bond_t::from_index(candidate, w);
+				if (symmetry_is_involute && cfg.bond_occ[geom.apply_symmetry(seed, symc, syma).index(w)])
+					seed = bond_t(0, 0, -1);
+			}
+		}
+
+		std::uniform_real_distribution<> uniform(0., 1.);
+
+		_Abar.clear();
+		_pocket.clear();
+		_pocket.push_back(seed);
+
+		cfg.bond_occ[seed.index(w)] = false;
+		for (auto& i : geom.get_vertices(seed))
+		{
+			ASSERT(cfg.vertex_occ[i.index(w)] > 0);
+			cfg.vertex_occ[i.index(w)]--;
+		}
+
+		int length = 0;
+		while (_pocket.size() > 0)
+		{
+			length++;
+			auto el = _pocket.back();
+			_pocket.pop_back();
+
+			auto moved = geom.apply_symmetry(el, symc, syma);
+			_Abar.push_back(moved);
+
+			set_pocket_candidates(el, moved, u, j4);
+
+			for (auto& [pos, interactions] : _candidates)
+			{
+				double u_factor = interactions.u != 0 ? u * interactions.u : 0;
+				double j4_factor = interactions.j4 != 0 ? j4 * interactions.j4 : 0;
+
+				double p_cascade = 1 - std::exp(-(u_factor + j4_factor));
+
+				if (interactions.hard_core > 0)
+					p_cascade = 1;
+
+				if (p_cascade > 0 && (p_cascade >= 1 || uniform(rng) < p_cascade))
+				{
+					_pocket.push_back(pos);
+					cfg.bond_occ[pos.index(w)] = false;
+					for (const auto& vtx : geom.get_vertices(pos))
+					{
+						ASSERT(cfg.vertex_occ[vtx.index(w)] > 0);
+						cfg.vertex_occ[vtx.index(w)]--;
+					}
+				}
+			}
+		}
+
+		for (auto& i : _Abar)
+		{
+			ASSERT(cfg.bond_occ[i.index(w)] == false)
+			cfg.bond_occ[i.index(w)] = true;
+
+			for (auto& vtx : geom.get_vertices(i))
+				cfg.vertex_occ[vtx.index(w)]++;
+		}
+
+#ifdef TEST
+		auto occupations = cfg.vertex_occ;
+		regenerate_occupation();
+		ASSERT(occupations == cfg.vertex_occ)
+#endif
+
+		// mark dirty
+		cfg.j4_total = -1;
+		cfg.clusters_total = -1;
+
+		return length;
+	}
+
+	template<typename Rng>
+	void worm_flip(Rng& rng, vertex_t& pos, bond_t& moving, const bond_t& move_from, int direction)
+	{
+		ASSERT(cfg.bond_occ[move_from.index(w)]);
+		cfg.bond_occ[move_from.index(w)] = false;
+		change_j4_bonds(move_from, -1);
+
+		if (moving.s >= 0)
+		{
+			ASSERT(!cfg.bond_occ[moving.index(w)]);
+			cfg.bond_occ[moving.index(w)] = true;
+			change_j4_bonds(moving, 1);
+		}
+
+		int flipdir = 0;
+
+		constexpr int ndir = std::tuple_size<typename std::remove_reference<decltype(geom.vertex_flips[0])>::type>::value;
+		if constexpr (ndir > 1)
+			flipdir = (int) (rng() % ndir);
+
+		moving = geom.principal(geom.bond_flips[direction][flipdir] + pos);
+
+		if (cfg.bond_occ[moving.index(w)])
+			// hit a hard-core constraint; force reversal
+			moving = move_from;
+		else
+		{
+			pos = geom.principal(geom.vertex_flips[direction][flipdir] + pos);
+		}
+	}
+
+	template<typename Rng> void worm_init(Rng& rng, vertex_t& cur_pos, bond_t& moving, const bond_t& move_from)
+	{
+		auto vertices = geom.get_vertices(move_from);
+		int prev_dir = -1;
+		for (int i = 0; i < (int) vertices.size(); i++)
+			if (vertices[i] == cur_pos)
+				prev_dir = i;
+
+		int dir;
+		if (prev_dir == -1)
+			dir = (int) (rng() % vertices.size());
+		else
+			dir = (int) (((rng() % (vertices.size() - 1)) + prev_dir) % vertices.size());
+		
+		// start the chain and remove a charge
+		cur_pos = vertices[dir];
+		cfg.vertex_occ[cur_pos.index(w)]--;
+		cfg.clusters_total -= cfg.vertex_occ[cur_pos.index(w)];
+
+		// set the correct direction for the flip based on which vertex was chosen
+		worm_flip(rng, cur_pos, moving, move_from, dir * 2 + move_from.s);
+	}
+
+	template<typename Rng> int worm_move(Rng& rng, double u)
+	{
+		calculate_energy();
+
+		bond_t seed(0, 0, -1);
+		while (seed.s == -1)
+		{
+			uint candidate = (uint)(rng() % cfg.bond_occ.size());
+			if (cfg.bond_occ[candidate])
+				seed = bond_t::from_index(candidate, w);
+		}
+
+		// init to invalid value so that worm_init does not exclude any direction
+		vertex_t pos(-1, -1);
+
+		// holds the temporary position of the moving trimer
+		bond_t moving(0, 0, -1);
+
+		worm_init(rng, pos, moving, seed);
+
+		std::uniform_real_distribution<> uniform(0., 1.);
+		int length = 0;
+
+		std::vector<int> found_directions;
+
+		while (true)
+		{
+			length++;
+
+			ASSERT(!cfg.bond_occ[moving.index(w)]);
+
+			int occupation = cfg.vertex_occ[pos.index(w)];
+			double p_continue = 1 - std::exp(-u * occupation);
+			if (occupation < 1 || uniform(rng) > p_continue)
+				break;
+			
+			found_directions.clear();
+			auto trimers = geom.get_bonds(pos);
+
+			for (int i = 0; i < (int) trimers.size(); i++)
+				if (cfg.bond_occ[trimers[i].index(w)])
+					found_directions.push_back(i);
+
+			ASSERT(found_directions.size() == (size_t) occupation);
+
+			int new_dir = found_directions[rng() % found_directions.size()];
+			const auto& chosen_trimer = trimers[new_dir];
+
+			worm_flip(rng, pos, moving, chosen_trimer, new_dir);
+		}
+
+		ASSERT(!cfg.bond_occ[moving.index(w)]);
+		cfg.bond_occ[moving.index(w)] = true;
+		change_j4_bonds(moving, 1);
+
+		cfg.clusters_total += cfg.vertex_occ[pos.index(w)];
+		cfg.vertex_occ[pos.index(w)]++;
+
+
+#ifdef TEST
+		int oldj4 = cfg.j4_total;
+		int oldcluster = cfg.clusters_total;
+		cfg.j4_total = -1;
+		cfg.clusters_total = -1;
+
+		calculate_energy();
+		ASSERT(cfg.j4_total == oldj4)
+		ASSERT(cfg.clusters_total == oldcluster)
+
+		auto occupations = cfg.vertex_occ;
+		regenerate_occupation();
+		ASSERT(occupations == cfg.vertex_occ)
+#endif
+
+		return length;
+	}
+
+	template <typename Rng> void metropolis_move(Rng& rng)
+	{
+		bond_t seed;
+		while (true)
+		{
+			uint candidate = (uint)(rng() % cfg.bond_occ.size());
+			if (cfg.bond_occ[candidate])
+			{
+				seed = bond_t::from_index(candidate, w);
+				cfg.bond_occ[candidate] = false;
+				break;
+			}
+		}
+		bond_t dest;
+		while (true)
+		{
+			uint candidate = (uint)(rng() % cfg.bond_occ.size());
+			if (!cfg.bond_occ[candidate])
+			{
+				dest = bond_t::from_index(candidate, w);
+				break;
+			}
+		}
+
+		change_j4_bonds(seed, -1);
+		change_j4_bonds(dest, 1);
+
+		int dcluster = 0;
+		for (const auto& vtx : geom.get_vertices(seed))
+		{
+			auto& count = cfg.vertex_occ[vtx.index(w)];
+			// difference due to removing one
+			// (x-1)(x-2)/2 - x(x-1)/2 = 1 - x
+			dcluster += 1 - count;
+			ASSERT(count > 0);
+			count--;
+		}
+		for (const auto& vtx : geom.get_vertices(dest))
+		{
+			auto& count = cfg.vertex_occ[vtx.index(w)];
+			// difference due to adding one
+			// x(x+1)/2 - x(x-1)/2 = x
+			dcluster += count;
+			count++;
+		}
+
+		cfg.bond_occ[dest.index(w)] = true;
+		cfg.clusters_total += dcluster;
+
+#ifdef TEST
+		int oldj4 = cfg.j4_total;
+		int oldcluster = cfg.clusters_total;
+		cfg.j4_total = -1;
+		cfg.clusters_total = -1;
+		calculate_energy();
+		ASSERT(cfg.j4_total == oldj4)
+		ASSERT(cfg.clusters_total == oldcluster)
+
+		auto occupations = cfg.vertex_occ;
+		regenerate_occupation();
+		ASSERT(occupations == cfg.vertex_occ)
+#endif
+	}
+};
+
+template<typename T> struct Accumulator
 {
 	std::vector<T> mean;
 	std::vector<T> m2;
@@ -415,201 +629,86 @@ template <typename T> struct MovingAverage
 	}
 };
 
-struct Options
+template<typename T> struct Observer { };
+
+template<>
+struct Observer<DimerSquareGeometry>
 {
-	int domain_length;
-	int mono_vacancies = 0;
+	using sample_t = Sample<DimerSquareGeometry>;
+	using bond_t = sample_t::bond_t;
+	using vertex_t = sample_t::vertex_t;
 
-	bool out_monomono = false;
-	bool out_clustercount = false;
-	bool out_monodi = false;
-	bool out_tritri = false;
-	bool out_energy = false;
-	bool out_histogram = false;
-	bool out_winding_histogram = false;
-	bool out_order = false;
+	int calculate_winding_number(const sample_t& sample, int dir) const
+	{
+		bond_t start(0, 0, 0);
 
-	bool idealbrickwall = false;
-	bool idealrt3 = false;
-	bool metropolis = false;
-	bool init_random = false;
+        if (dir == 0)
+            start.s = 1;
+        else
+            start.s = 0;
 
-	bool multicanonical = false;
-	int multicanonical_rounds = 10;
-	int multicanonical_round_length = 100000;
-	int multicanonical_threads = 1;
-	double multicanonical_factor_decay = 0.7;
-	double multicanonical_init_factor = 0.03;
-	int multicanonical_swap_interval = 5;
+        auto pos = start;
+		int tot = 0;
+		int sign = 1;
 
-	int position_interval = 50000;
-	int total_steps = 0;
-	int decorr_interval = 1;
-	int accumulator_interval = 0;
-	int swap_interval = 10;
-	int adaptation_interval = 500;
-	int adaptation_duration = 800000;
+		while (true)
+		{
+			if (sample.cfg.bond_occ[pos.index(sample.w)])
+				tot += sign;
 
-	double j4 = 0;
-	double u = infinity;
-	std::vector<double> temperatures;
-	bool adaptive_pt = false;
+            if (dir == 0)
+                pos.x++;
+            else
+                pos.y++;
+			pos = sample.geom.principal(pos);
 
-	std::string directory;
+			sign *= -1;
+			if (pos == start)
+				break;
+		}
+		return tot;
+	}
+
+	std::pair<int, int> calculate_topo_sector(const sample_t& sample) const
+	{
+        int a = calculate_winding_number(sample, 0);
+        int b = calculate_winding_number(sample, 1);
+
+		return std::make_pair(a, b);
+	}
 };
 
-struct InteractionCount
+template<>
+struct Observer<TrimerTriangularGeometry>
 {
-	int u = 0;
-	int j4 = 0;
-	int hard_core = 0;
-};
+	using sample_t = Sample<TrimerTriangularGeometry>;
+	using vertex_t = sample_t::vertex_t;
+	using bond_t = sample_t::bond_t;
 
-struct Sample
-{
-  private:
-	std::vector<BondPos> _pocket, _Abar;
-	std::unordered_map<BondPos, InteractionCount> _candidates;
 	std::unordered_map<int, std::vector<complex>> _ft_contributions;
 
-  public:
-	int32_t w, h;
-	TrimerGeometryProvider geom;
-
-	struct Configuration
+	template<typename Rng>
+	void record_dimer_monomer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng, int max_dimers) const
 	{
-		std::vector<bool> bond_occ;
-		std::vector<uint8_t> vertex_occ;
-		int j4_total, clusters_total;
-	};
+		std::vector<double> vals(sample.w * sample.h);
 
-	Configuration cfg;
+		std::vector<std::pair<vertex_t, int>> dimers;
+		std::unordered_set<vertex_t> isolated_monos;
+		std::unordered_set<vertex_t> connected_monos;
 
-	Sample() : w(0), h(0)
-	{
-		cfg.j4_total = 0;
-		cfg.clusters_total = 0;
-	}
+		const std::array<vertex_t, 3> neighbors = {vertex_t{1, 0}, {0, 1}, {-1, 1}};
 
-	Sample(int32_t w, int32_t h) : w(w), h(h)
-	{
-		cfg.bond_occ = std::vector<bool>(w * h * 2, false);
-		cfg.vertex_occ = std::vector<uint8_t>(w * h, 0);
-		cfg.j4_total = 0;
-		cfg.clusters_total = 0;
-	}
-
-	Sample(int32_t w, int32_t h, const std::vector<BondPos>& trimers) : w(w), h(h)
-	{
-		cfg.bond_occ = std::vector<bool>(w * h * 2, false);
-		cfg.vertex_occ = std::vector<uint8_t>(w * h, 0);
-
-		for (auto& i : trimers)
-			cfg.bond_occ[i.index(w)] = true;
-
-		cfg.j4_total = -1;
-		cfg.clusters_total = -1;
-
-		regenerate_occupation();
-		calculate_energy();
-	}
-
-	template <typename Rng> void initialize(const Options& opt, Rng& rng)
-	{
-		if (opt.init_random)
+		for (uint i = 0; i < sample.cfg.vertex_occ.size(); i++)
 		{
-			std::ostringstream ss;
-			ss << "new-data/disordered/" << opt.domain_length << "x" << opt.domain_length
-			   << "_r-0_t0.000000_j0.000_20000000.200_0/positions.dat";
-			load_from(ss.str(), rng, opt.mono_vacancies / 3);
-		}
-		else
-		{
-			if (opt.j4 < 0)
-				reconfigure_brick_wall(rng, opt.mono_vacancies / 3);
-			else
-				reconfigure_root3(rng, opt.mono_vacancies / 3);
-		}
-	}
-
-	void regenerate_occupation()
-	{
-		std::fill(cfg.vertex_occ.begin(), cfg.vertex_occ.end(), 0);
-
-		for (uint i = 0; i < cfg.bond_occ.size(); i++)
-			if (cfg.bond_occ[i])
-			{
-				auto tri = BondPos::from_index(i, w);
-				for (auto& vtx : geom.get_vertices(tri, w, h))
-					cfg.vertex_occ[vtx.index(w)]++;
-			}
-	}
-
-	void decrease_j4_bonds(const BondPos& removed)
-	{
-		for (auto& rel : geom.j4_neighbor_list[removed.s])
-			if (cfg.bond_occ[BondPos(removed.x + rel.x, removed.y + rel.y, 1 - removed.s).canonical(w, h).index(w)])
-				cfg.j4_total--;
-	}
-
-	void increase_j4_bonds(const BondPos& added)
-	{
-		for (auto& rel : geom.j4_neighbor_list[added.s])
-			if (cfg.bond_occ[BondPos(added.x + rel.x, added.y + rel.y, 1 - added.s).canonical(w, h).index(w)])
-				cfg.j4_total++;
-	}
-
-	void calculate_energy()
-	{
-		if (cfg.clusters_total >= 0 && cfg.j4_total >= 0)
-			return;
-
-		cfg.clusters_total = 0;
-		cfg.j4_total = 0;
-
-#ifdef TEST
-		int total_occ = 0;
-		for (const auto& occ : cfg.vertex_occ)
-			total_occ += occ;
-
-		for (auto i : cfg.bond_occ)
-			if (i)
-				total_occ -= 3;
-
-		ASSERT(total_occ == 0);
-#endif
-
-		for (const auto& occ : cfg.vertex_occ)
-			cfg.clusters_total += occ * (occ - 1) / 2;
-
-		for (int x = 0; x < w; x++)
-			for (int y = 0; y < h; y++)
-				if (cfg.bond_occ[BondPos(x, y, 0).index(w)])
-					increase_j4_bonds(BondPos(x, y, 0));
-	}
-
-	template <typename Rng>
-	void record_dimer_monomer_correlations(Accumulator<double>& a, Rng& rng, int max_dimers) const
-	{
-		std::vector<double> vals(w * h);
-
-		std::vector<std::pair<VertexPos, int>> dimers;
-		std::unordered_set<VertexPos> isolated_monos;
-		std::unordered_set<VertexPos> connected_monos;
-
-		const std::array<VertexPos, 3> neighbors = {VertexPos{1, 0}, {0, 1}, {-1, 1}};
-
-		for (uint i = 0; i < cfg.vertex_occ.size(); i++)
-		{
-			if (cfg.vertex_occ[i] > 0)
+			if (sample.cfg.vertex_occ[i] > 0)
 				continue;
 
 			bool connected = false;
-			auto pos = VertexPos::from_index(i, w);
+			auto pos = vertex_t::from_index(i, sample.w);
 			for (int r = 0; r < 3; r++)
 			{
-				auto neighbor = (pos + neighbors[r]).canonical(w, h);
-				if (cfg.vertex_occ[neighbor.index(w)] == 0)
+				auto neighbor = sample.geom.principal(pos + neighbors[r]);
+				if (sample.cfg.vertex_occ[neighbor.index(sample.w)] == 0)
 				{
 					dimers.push_back(std::make_pair(pos, r));
 					isolated_monos.erase(neighbor);
@@ -630,30 +729,30 @@ struct Sample
 		{
 			auto dimer = dimers[i];
 			for (auto j : isolated_monos)
-				vals[j.center_at(dimer.first, w, h).rotate(-dimer.second).canonical(w, h).index(w)]++;
+				vals[sample.geom.principal(sample.geom.rotate(sample.geom.center(j, dimer.first), -dimer.second)).index(sample.w)]++;
 		}
 
 		a.record(vals);
 	}
 
-	double trimer_correlation(BondPos d) const
+	double trimer_correlation(const sample_t& sample, const bond_t& d) const
 	{
 		int total = 0;
 		int found = 0;
 
-		for (uint i = 0; i < cfg.bond_occ.size(); i++)
+		for (uint i = 0; i < sample.cfg.bond_occ.size(); i++)
 		{
-			if (cfg.bond_occ[i])
+			if (sample.cfg.bond_occ[i])
 			{
-				BondPos p1 = BondPos::from_index(i, w);
-				BondPos n;
+				bond_t p1 = bond_t::from_index(i, sample.w);
+				bond_t n;
 
 				if (p1.s == 1)
-					n = BondPos(-p1.x + d.x, -p1.y + d.y, 1 - d.s);
+					n = bond_t(-p1.x + d.x, -p1.y + d.y, (int8_t) (1 - d.s));
 				else
-					n = BondPos(p1.x + d.x, p1.y + d.y, d.s);
+					n = bond_t(p1.x + d.x, p1.y + d.y, d.s);
 
-				if (cfg.bond_occ[n.canonical(w, h).index(w)])
+				if (sample.cfg.bond_occ[sample.geom.principal(n).index(sample.w)])
 					found++;
 				total++;
 			}
@@ -662,56 +761,56 @@ struct Sample
 		return (double)found / total;
 	}
 
-
-	void record_trimer_correlations(Accumulator<double>& a) const
+	void record_trimer_correlations(const sample_t& sample, Accumulator<double>& a) const
 	{
-		std::vector<double> vals(w * h * 2);
-		for (uint i = 0; i < cfg.bond_occ.size(); i++)
+		std::vector<double> vals(sample.w * sample.h * 2);
+
+		for (uint i = 0; i < sample.cfg.bond_occ.size(); i++)
 		{
-			if (cfg.bond_occ[i])
-				for (uint j = i + 1; j < cfg.bond_occ.size(); j++)
-					if (cfg.bond_occ[j])
+			if (sample.cfg.bond_occ[i])
+				for (uint j = i + 1; j < sample.cfg.bond_occ.size(); j++)
+					if (sample.cfg.bond_occ[j])
 					{
-						auto p1 = BondPos::from_index(i, w);
-						auto p2 = BondPos::from_index(j, w);
+						auto p1 = bond_t::from_index(i, sample.w);
+						auto p2 = bond_t::from_index(j, sample.w);
 
-						auto d = p1.s == 0 ? BondPos(p2.x - p1.x, p2.y - p1.y, p2.s)
-										   : BondPos(p1.x - p2.x, p1.y - p2.y, 1 - p2.s);
+						auto d = p1.s == 0 ? bond_t(p2.x - p1.x, p2.y - p1.y, p2.s)
+										   : bond_t(p1.x - p2.x, p1.y - p2.y, (int8_t) (1 - p2.s));
 
-						vals[d.canonical(w, h).index(w)]++;
+						vals[sample.geom.principal(d).index(sample.w)]++;
 					}
 		}
 
 		a.record(vals);
 	}
 
-	template <typename Rng>
-	void record_partial_trimer_correlations(Accumulator<double>& a, Rng& rng, double fraction) const
+	template<typename Rng>
+	void record_partial_trimer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng, double fraction) const
 	{
-		std::vector<double> vals(w * h * 2);
+		std::vector<double> vals(sample.w * sample.h * 2);
 		std::uniform_real_distribution<> uniform(0., 1.);
 
 		int seen = 0;
-		for (uint i = 0; i < cfg.bond_occ.size(); i++)
+		for (uint i = 0; i < sample.cfg.bond_occ.size(); i++)
 		{
-			if (cfg.bond_occ[i] && uniform(rng) <= fraction)
+			if (sample.cfg.bond_occ[i] && uniform(rng) <= fraction)
 			{
 				seen++;
-				for (uint j = 0; j < cfg.bond_occ.size(); j++)
-					if (cfg.bond_occ[j])
+				for (uint j = 0; j < sample.cfg.bond_occ.size(); j++)
+					if (sample.cfg.bond_occ[j])
 					{
 						if (j == i)
 							continue;
 
-						auto p1 = BondPos::from_index(i, w);
-						auto p2 = BondPos::from_index(j, w);
+						auto p1 = bond_t::from_index(i, sample.w);
+						auto p2 = bond_t::from_index(j, sample.w);
 						if (j > i)
 							std::swap(p1, p2);
 
-						auto d = p1.s == 0 ? BondPos(p2.x - p1.x, p2.y - p1.y, p2.s)
-										   : BondPos(p1.x - p2.x, p1.y - p2.y, 1 - p2.s);
+						auto d = p1.s == 0 ? bond_t(p2.x - p1.x, p2.y - p1.y, p2.s)
+										   : bond_t(p1.x - p2.x, p1.y - p2.y, (int8_t) (1 - p2.s));
 
-						vals[d.canonical(w, h).index(w)]++;
+						vals[sample.geom.principal(d).index(sample.w)]++;
 					}
 			}
 		}
@@ -734,7 +833,7 @@ struct Sample
 		int sublattice_polarization;
 	};
 
-	struct Observables record_order_parameters(Accumulator<double>& acc)
+	Observables record_order_parameters(const sample_t& sample, Accumulator<double>& acc)
 	{
 		std::vector<double> vals(11);
 
@@ -742,8 +841,8 @@ struct Sample
 		const double Kpx0 = 4. / 3, Kpy0 = 0;
 		// const double Kpx1 = -2. / 3, Kpy1 = 2 * rt3 / 3;
 		// const double Kpx2 = -2. / 3, Kpy2 = -2 * rt3 / 3;
-		const double Kpx1 = 4. / 3, Kpy1 = 4. / rt3 / (double)h;
-		const double Kpx2 = 4. / 3, Kpy2 = 8. / rt3 / (double)w;
+		const double Kpx1 = 4. / 3, Kpy1 = 4. / rt3 / (double) sample.h;
+		const double Kpx2 = 4. / 3, Kpy2 = 8. / rt3 / (double) sample.w;
 
 		const double Mpx0 = 0, Mpy0 = 2 * rt3 / 3;
 		const double Mpx1 = 1, Mpy1 = -rt3 / 3;
@@ -753,11 +852,11 @@ struct Sample
 
 		int AmB = 0;
 
-		for (int i = 0; i < (int)cfg.bond_occ.size(); i++)
+		for (int i = 0; i < (int) sample.cfg.bond_occ.size(); i++)
 		{
-			if (cfg.bond_occ[i])
+			if (sample.cfg.bond_occ[i])
 			{
-				auto pos = BondPos::from_index(i, w);
+				auto pos = bond_t::from_index(i, sample.w);
 				if (!_ft_contributions.contains(i))
 				{
 					double x = pos.x + pos.y * 0.5;
@@ -816,14 +915,14 @@ struct Sample
 	}
 
 	template <typename Rng>
-	void record_partial_monomer_correlations(Accumulator<double>& a, Rng& rng, int max_count) const
+	void record_partial_monomer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng, int max_count) const
 	{
-		std::vector<double> vals(w * h);
-		std::vector<VertexPos> pos;
+		std::vector<double> vals(sample.w * sample.h);
+		std::vector<vertex_t> pos;
 
-		for (uint i = 0; i < cfg.vertex_occ.size(); i++)
-			if (cfg.vertex_occ[i] == 0)
-				pos.push_back(VertexPos::from_index(i, w));
+		for (uint i = 0; i < sample.cfg.vertex_occ.size(); i++)
+			if (sample.cfg.vertex_occ[i] == 0)
+				pos.push_back(vertex_t::from_index(i, sample.w));
 
 		std::shuffle(pos.begin(), pos.end(), rng);
 		uint sample_count = (uint)std::min(pos.size(), (size_t)max_count);
@@ -836,8 +935,8 @@ struct Sample
 					continue;
 
 				auto d = pos[i] - pos[j];
-				vals[d.canonical(w, h).index(w)] += 0.5;
-				vals[(-d).canonical(w, h).index(w)] += 0.5;
+				vals[sample.geom.principal(d).index(sample.w)] += 0.5;
+				vals[sample.geom.principal(-d).index(sample.w)] += 0.5;
 			}
 		}
 
@@ -848,54 +947,54 @@ struct Sample
 		a.record(vals);
 	}
 
-	void record_monomer_correlations(Accumulator<double>& a) const
+	void record_monomer_correlations(const sample_t& sample, Accumulator<double>& a) const
 	{
-		std::vector<double> vals(w * h);
-		std::vector<VertexPos> pos;
+		std::vector<double> vals(sample.w * sample.h);
+		std::vector<vertex_t> pos;
 
-		for (uint i = 0; i < cfg.vertex_occ.size(); i++)
-			if (cfg.vertex_occ[i] == 0)
-				pos.push_back(VertexPos::from_index(i, w));
+		for (uint i = 0; i < sample.cfg.vertex_occ.size(); i++)
+			if (sample.cfg.vertex_occ[i] == 0)
+				pos.push_back(vertex_t::from_index(i, sample.w));
 
 		for (uint i = 0; i < pos.size(); i++)
 		{
 			for (uint j = i + 1; j < pos.size(); j++)
 			{
 				auto d = pos[i] - pos[j];
-				vals[d.canonical(w, h).index(w)] += 1;
-				vals[(-d).canonical(w, h).index(w)] += 1;
+				vals[sample.geom.principal(d).index(sample.w)] += 1;
+				vals[sample.geom.principal(-d).index(sample.w)] += 1;
 			}
 		}
 
-		double inv_count = 1. / (double)pos.size();
+		double inv_count = 1. / (double) pos.size();
 		for (auto& x : vals)
 			x *= inv_count;
 
 		a.record(vals);
 	}
 
-	void record_cluster_count(Accumulator<double>& a) const
+	void record_cluster_count(const sample_t& sample, Accumulator<double>& a) const
 	{
 		std::vector<double> vals(7);
 
-		for (uint i = 0; i < cfg.vertex_occ.size(); i++)
-			vals[cfg.vertex_occ[i]]++;
+		for (uint i = 0; i < sample.cfg.vertex_occ.size(); i++)
+			vals[sample.cfg.vertex_occ[i]]++;
 
 		a.record(vals);
 	}
 
-	double record_energy(Accumulator<double>& a, double u, double j4)
+	double record_energy(sample_t& sample, Accumulator<double>& a, double u, double j4) const
 	{
 		std::vector<double> vals(5);
-		calculate_energy();
+		sample.calculate_energy();
 
-		vals[0] = cfg.clusters_total;
-		vals[1] = cfg.j4_total;
+		vals[0] = sample.cfg.clusters_total;
+		vals[1] = sample.cfg.j4_total;
 
 		if (u < infinity)
-			vals[2] = cfg.clusters_total * u + cfg.j4_total * j4;
+			vals[2] = sample.cfg.clusters_total * u + sample.cfg.j4_total * j4;
 		else
-			vals[2] = cfg.j4_total * j4;
+			vals[2] = sample.cfg.j4_total * j4;
 
 		vals[3] = vals[2] * vals[2];
 		vals[4] = vals[3] * vals[3];
@@ -905,39 +1004,39 @@ struct Sample
 		return vals[2];
 	}
 
-	int calculate_winding_number(BondPos start, int dir) const
+	int calculate_winding_number(const sample_t& sample, bond_t start, int dir) const
 	{
-		BondPos cpos = start;
-		int tot = -(w + h) / 6;
+		bond_t cpos = start;
+		int tot = -(sample.w + sample.h) / 6;
 
 		while (true)
 		{
-			if (cfg.bond_occ[cpos.index(w)])
+			if (sample.cfg.bond_occ[cpos.index(sample.w)])
 				tot++;
 
 			switch (dir % 3)
 			{
 			case 0:
 				if (cpos.s == 0)
-					cpos = BondPos(cpos.x, cpos.y, 1);
+					cpos = bond_t(cpos.x, cpos.y, 1);
 				else
-					cpos = BondPos(cpos.x + 1, cpos.y + 1, 0);
+					cpos = bond_t(cpos.x + 1, cpos.y + 1, 0);
 				break;
 			case 1:
 				if (cpos.s == 0)
-					cpos = BondPos(cpos.x - 1, cpos.y, 1);
+					cpos = bond_t(cpos.x - 1, cpos.y, 1);
 				else
-					cpos = BondPos(cpos.x - 1, cpos.y + 1, 0);
+					cpos = bond_t(cpos.x - 1, cpos.y + 1, 0);
 				break;
 			case 2:
 				if (cpos.s == 0)
-					cpos = BondPos(cpos.x, cpos.y - 1, 1);
+					cpos = bond_t(cpos.x, cpos.y - 1, 1);
 				else
-					cpos = BondPos(cpos.x + 1, cpos.y - 1, 0);
+					cpos = bond_t(cpos.x + 1, cpos.y - 1, 0);
 				break;
 			}
 
-			cpos = cpos.canonical(w, h);
+			cpos = sample.geom.principal(cpos);
 
 			if (cpos == start)
 				break;
@@ -945,354 +1044,102 @@ struct Sample
 		return tot;
 	}
 
-	std::tuple<int, int, int, int> calculate_topo_sector() const
+	std::tuple<int, int, int, int> calculate_topo_sector(const sample_t& sample) const
 	{
-		int wa = calculate_winding_number(BondPos(0, 0, 0), 0);
-		int wb = calculate_winding_number(BondPos(2, 0, 0), 1);
-		int wc = calculate_winding_number(BondPos(1, 0, 0), 0);
-		int wd = calculate_winding_number(BondPos(0, 0, 0), 1);
+		int wa = calculate_winding_number(sample, bond_t(0, 0, 0), 0);
+		int wb = calculate_winding_number(sample, bond_t(2, 0, 0), 1);
+		int wc = calculate_winding_number(sample, bond_t(1, 0, 0), 0);
+		int wd = calculate_winding_number(sample, bond_t(0, 0, 0), 1);
 
 		int ri = (wa - wb) / 3, rj = (2 * wa + wb) / 3;
 		int gi = (wc - wd) / 3, gj = (2 * wc + wd) / 3;
 		return std::make_tuple(ri, rj, gi, gj);
 	}
+};
 
-	void set_pocket_candidates(const BondPos& el, const BondPos& moved, double u, double j4)
+template<>
+struct Observer<DimerHexagonalSkewGeometry>
+{
+	using sample_t = Sample<DimerHexagonalSkewGeometry>;
+	using vertex_t = sample_t::vertex_t;
+	using bond_t = sample_t::bond_t;
+
+	int calculate_winding_number(const sample_t& sample, int dir) const
 	{
-		_candidates.clear();
-
-		// hard-core constraint
-		if (cfg.bond_occ[moved.index(w)])
-			_candidates[moved].hard_core++;
-
-		// add target overlaps to candidates
-		if (u != 0)
-			for (const auto& i : geom.get_vertices(moved, w, h))
-				if (cfg.vertex_occ[i.index(w)] > 0)
-					for (const auto& trimer_pos : geom.get_bonds(i, w, h))
-						if (cfg.bond_occ[trimer_pos.index(w)])
-							_candidates[trimer_pos].u++;
-
-		// add source overlaps to candidates
-		if (u != 0 && u < infinity)
-			for (const auto& i : geom.get_vertices(el, w, h))
-				if (cfg.vertex_occ[i.index(w)] > 0)
-					for (const auto& trimer_pos : geom.get_bonds(i, w, h))
-						if (cfg.bond_occ[trimer_pos.index(w)])
-							_candidates[trimer_pos].u--;
-
-		if (j4 != 0)
-		{
-			for (auto& d : geom.j4_neighbor_list[el.s])
-			{
-				auto pos = (BondPos(el.x, el.y, 1 - el.s) + d).canonical(w, h);
-				if (cfg.bond_occ[pos.index(w)])
-					_candidates[pos].j4--;
-			}
-
-			for (auto& d : geom.j4_neighbor_list[moved.s])
-			{
-				auto pos = (BondPos(moved.x, moved.y, 1 - moved.s) + d).canonical(w, h);
-				if (cfg.bond_occ[pos.index(w)])
-					_candidates[pos].j4++;
-			}
-		}
-	}
-
-	template <typename Rng> int pocket_move(Rng& rng, double u, double j4)
-	{
-		calculate_energy();
-
-		VertexPos symc;
-		int syma;
-		bool symmetry_is_involute = false;
-
-		BondPos seed(0, 0, 2);
-		while (seed.s == 2)
-		{
-			uint candidate = (uint)(rng() % cfg.bond_occ.size());
-
-			symc = VertexPos((int)(rng() % w), (int)(rng() % h));
-			syma = (int)(rng() % 17);
-
-			if (cfg.bond_occ[candidate])
-			{
-				seed = BondPos::from_index(candidate, w);
-				if (symmetry_is_involute && cfg.bond_occ[seed.apply_symmetry(symc, syma, w, h).index(w)])
-					seed = BondPos(0, 0, 2);
-			}
-		}
-
-		std::uniform_real_distribution<> uniform(0., 1.);
-
-		_Abar.clear();
-		_pocket.clear();
-
-		_pocket.push_back(seed);
-
-		cfg.bond_occ[seed.index(w)] = false;
-		for (auto& i : geom.get_vertices(seed, w, h))
-		{
-			ASSERT(cfg.vertex_occ[i.index(w)] > 0);
-			cfg.vertex_occ[i.index(w)]--;
-		}
-
-		int length = 0;
-		while (_pocket.size() > 0)
-		{
-			length++;
-			auto el = _pocket.back();
-			_pocket.pop_back();
-
-			auto moved = el.apply_symmetry(symc, syma, w, h);
-			_Abar.push_back(moved);
-
-			set_pocket_candidates(el, moved, u, j4);
-
-			for (auto& [pos, interactions] : _candidates)
-			{
-				double u_factor = interactions.u != 0 ? u * interactions.u : 0;
-				double j4_factor = interactions.j4 != 0 ? j4 * interactions.j4 : 0;
-
-				double p_cascade = 1 - std::exp(-(u_factor + j4_factor));
-
-				if (interactions.hard_core > 0)
-					p_cascade = 1;
-
-				if (p_cascade > 0 && (p_cascade >= 1 || uniform(rng) < p_cascade))
-				{
-					_pocket.push_back(pos);
-					cfg.bond_occ[pos.index(w)] = false;
-					for (const auto& vtx : geom.get_vertices(pos, w, h))
-					{
-						ASSERT(cfg.vertex_occ[vtx.index(w)] > 0);
-						cfg.vertex_occ[vtx.index(w)]--;
-					}
-				}
-			}
-		}
-
-		for (auto& i : _Abar)
-		{
-			ASSERT(cfg.bond_occ[i.index(w)] == false)
-			cfg.bond_occ[i.index(w)] = true;
-
-			for (auto& vtx : geom.get_vertices(i, w, h))
-				cfg.vertex_occ[vtx.index(w)]++;
-		}
-
-#ifdef TEST
-		auto occupations = cfg.vertex_occ;
-		regenerate_occupation();
-		ASSERT(occupations == cfg.vertex_occ)
-#endif
-
-		// mark dirty
-		cfg.j4_total = -1;
-		cfg.clusters_total = -1;
-
-		return length;
-	}
-
-	void worm_flip(VertexPos& pos, BondPos& moving, const BondPos& move_from, int direction)
-	{
-		ASSERT(cfg.bond_occ[move_from.index(w)]);
-		cfg.bond_occ[move_from.index(w)] = false;
-		decrease_j4_bonds(move_from);
-
-		if (moving.s >= 0)
-		{
-			ASSERT(!cfg.bond_occ[moving.index(w)]);
-			cfg.bond_occ[moving.index(w)] = true;
-			increase_j4_bonds(moving);
-		}
-
-		moving = (geom.tri_flips[direction] + pos).canonical(w, h);
-
-		if (cfg.bond_occ[moving.index(w)])
-			// hit a hard-core constraint; force reversal
-			moving = move_from;
+		bond_t start(0, 0, 0);
+		if (dir == 0)
+			start.s = 2;
 		else
-			pos = (geom.mono_flips[direction] + pos).canonical(w, h);
+			start.s = 1;
+
+        auto pos = start;
+		int bonds = 0;
+        int total = 0;
+
+		while (true)
+		{
+            total++;
+			if (sample.cfg.bond_occ[pos.index(sample.w)])
+				bonds++;
+
+			if (dir == 0)
+				pos.x++;
+			else
+				pos.y++;
+
+			pos = sample.geom.principal(pos);
+
+			if (pos == start)
+				break;
+		}
+
+		return bonds - total / 3;
 	}
 
-	template <typename Rng> void worm_init(Rng& rng, VertexPos& cur_pos, BondPos& moving, const BondPos& move_from)
+	std::pair<int, int> calculate_topo_sector(const sample_t& sample) const
 	{
-		auto vertices = geom.get_vertices(move_from, w, h);
-		int prev_dir = -1;
-		for (int i = 0; i < (int) vertices.size(); i++)
-			if (vertices[i] == cur_pos)
-				prev_dir = i;
+		int wa = calculate_winding_number(sample, 0);
+		int wb = calculate_winding_number(sample, 1);
 
-		int dir;
-		if (prev_dir == -1)
-			dir = (int) (rng() % vertices.size());
+		// int ri = (wa - wb) / 3, rj = (2 * wa + wb) / 3;
+		return std::make_pair(wa, wb);
+	}
+};
+
+template<typename T> struct SampleInitializer { };
+
+template<>
+struct SampleInitializer<TrimerTriangularGeometry>
+{
+	using sample_t = Sample<TrimerTriangularGeometry>;
+
+	template<typename Rng> void initialize(sample_t& sample, const Options& opt, Rng& rng)
+	{
+		if (opt.init_random)
+		{
+			std::ostringstream ss;
+			ss << "new-data/disordered/" << opt.domain_length << "x" << opt.domain_length
+			   << "_r-0_t0.000000_j0.000_20000000.200_0/positions.dat";
+			load_from(sample, ss.str(), rng, opt.mono_vacancies / 3);
+		}
 		else
-			dir = (int) (((rng() % (vertices.size() - 1)) + prev_dir) % vertices.size());
-		
-		// start the chain and remove a charge
-		cur_pos = vertices[dir];
-		cfg.vertex_occ[cur_pos.index(w)]--;
-		cfg.clusters_total -= cfg.vertex_occ[cur_pos.index(w)];
-
-		// set the correct direction for the flip based on which vertex was chosen
-		worm_flip(cur_pos, moving, move_from, dir * 2 + move_from.s);
+		{
+			if (opt.j4 < 0)
+				reconfigure_brick_wall(sample, rng, opt.mono_vacancies / 3);
+			else
+				reconfigure_root3(sample, rng, opt.mono_vacancies / 3);
+		}
 	}
 
-	template <typename Rng> int worm_move(Rng& rng, double u)
+	template<typename Rng> void reconfigure_brick_wall(sample_t& sample, Rng& rng, int vacancies = 0)
 	{
-		calculate_energy();
+		int w = sample.w, h = sample.h;
 
-		BondPos seed(0, 0, -1);
-		while (seed.s == -1)
-		{
-			uint candidate = (uint)(rng() % cfg.bond_occ.size());
-			if (cfg.bond_occ[candidate])
-				seed = BondPos::from_index(candidate, w);
-		}
-
-		// init to invalid value so that worm_init does not exclude any direction
-		VertexPos pos(-1, -1);
-
-		// holds the temporary position of the moving trimer
-		BondPos moving(0, 0, -1);
-
-		worm_init(rng, pos, moving, seed);
-
-		std::uniform_real_distribution<> uniform(0., 1.);
-		int length = 0;
-
-		while (true)
-		{
-			length++;
-
-			// hard-core; force reversal
-			if (cfg.bond_occ[moving.index(w)])
-			{
-				worm_init(rng, pos, moving, moving);
-				continue;
-			}
-
-			int occupation = cfg.vertex_occ[pos.index(w)];
-			double p_continue = 1 - std::exp(-u * occupation);
-			if (occupation < 1 || uniform(rng) > p_continue)
-				break;
-			
-			int found_count = 0;
-			std::array<int, 5> found_directions;
-			auto trimers = geom.get_bonds(pos, w, h);
-
-			for (int i = 0; i < (int) trimers.size(); i++)
-				if (cfg.bond_occ[trimers[i].index(w)])
-					found_directions[found_count++] = i;
-
-			ASSERT(found_count == occupation);
-			ASSERT(found_count < (int) trimers.size());
-
-			int new_dir = found_directions[rng() % found_count];
-			const auto& chosen_trimer = trimers[new_dir];
-
-			worm_flip(pos, moving, chosen_trimer, new_dir);
-		}
-
-		ASSERT(!cfg.bond_occ[moving.index(w)]);
-		cfg.bond_occ[moving.index(w)] = true;
-		increase_j4_bonds(moving);
-
-		cfg.clusters_total += cfg.vertex_occ[pos.index(w)];
-		cfg.vertex_occ[pos.index(w)]++;
-
-
-#ifdef TEST
-		int oldj4 = cfg.j4_total;
-		int oldcluster = cfg.clusters_total;
-		cfg.j4_total = -1;
-		cfg.clusters_total = -1;
-
-		calculate_energy();
-		ASSERT(cfg.j4_total == oldj4)
-		ASSERT(cfg.clusters_total == oldcluster)
-
-		auto occupations = cfg.vertex_occ;
-		regenerate_occupation();
-		ASSERT(occupations == cfg.vertex_occ)
-#endif
-
-		return length;
-	}
-
-	template <typename Rng> void metropolis_move(Rng& rng)
-	{
-		BondPos seed;
-		while (true)
-		{
-			uint candidate = (uint)(rng() % cfg.bond_occ.size());
-			if (cfg.bond_occ[candidate])
-			{
-				seed = BondPos::from_index(candidate, w);
-				cfg.bond_occ[candidate] = false;
-				break;
-			}
-		}
-		BondPos dest;
-		while (true)
-		{
-			uint candidate = (uint)(rng() % cfg.bond_occ.size());
-			if (!cfg.bond_occ[candidate])
-			{
-				dest = BondPos::from_index(candidate, w);
-				break;
-			}
-		}
-
-		decrease_j4_bonds(seed);
-		increase_j4_bonds(dest);
-
-		int dcluster = 0;
-		for (const auto& vtx : geom.get_vertices(seed, w, h))
-		{
-			auto& count = cfg.vertex_occ[vtx.index(w)];
-			// difference due to removing one
-			// (x-1)(x-2)/2 - x(x-1)/2 = 1 - x
-			dcluster += 1 - count;
-			ASSERT(count > 0);
-			count--;
-		}
-		for (const auto& vtx : geom.get_vertices(dest, w, h))
-		{
-			auto& count = cfg.vertex_occ[vtx.index(w)];
-			// difference due to adding one
-			// x(x+1)/2 - x(x-1)/2 = x
-			dcluster += count;
-			count++;
-		}
-
-		cfg.bond_occ[dest.index(w)] = true;
-
-		cfg.clusters_total += dcluster;
-
-#ifdef TEST
-		int oldj4 = cfg.j4_total;
-		int oldcluster = cfg.clusters_total;
-		cfg.j4_total = -1;
-		cfg.clusters_total = -1;
-		calculate_energy();
-		ASSERT(cfg.j4_total == oldj4)
-		ASSERT(cfg.clusters_total == oldcluster)
-
-		auto occupations = cfg.vertex_occ;
-		regenerate_occupation();
-		ASSERT(occupations == cfg.vertex_occ)
-#endif
-	}
-
-	template <typename Rng> void reconfigure_brick_wall(Rng& rng, int vacancies = 0)
-	{
 		if (w != h || w % 6)
 			throw "";
 
-		std::fill(cfg.bond_occ.begin(), cfg.bond_occ.end(), false);
-		std::fill(cfg.vertex_occ.begin(), cfg.vertex_occ.end(), 0);
+		std::fill(sample.cfg.bond_occ.begin(), sample.cfg.bond_occ.end(), false);
+		std::fill(sample.cfg.vertex_occ.begin(), sample.cfg.vertex_occ.end(), 0);
 
 		int orientation = (int)(rng() % 3);
 		int phase = (int)(rng() % 3);
@@ -1316,15 +1163,15 @@ struct Sample
 			}
 		}
 
-		BondPos cur_row_start = BondPos(0, 0, 0);
+		sample_t::bond_t cur_row_start = sample_t::bond_t(0, 0, 0);
 
 		// offset row
 		if (rng() % 2)
 		{
 			if (orientation == 2)
-				cur_row_start = BondPos(1, 0, 0);
+				cur_row_start = sample_t::bond_t(1, 0, 0);
 			else
-				cur_row_start = BondPos(0, 1, 0);
+				cur_row_start = sample_t::bond_t(0, 1, 0);
 		}
 
 		int n = 0;
@@ -1334,18 +1181,18 @@ struct Sample
 
 			for (int col = 0; col < 2 * w / 3; col++)
 			{
-				BondPos cur_pos;
+				sample_t::bond_t cur_pos;
 				switch (orientation)
 				{
 				case 0:
-					cur_pos = BondPos(cur_row_start.x + offset / 2, cur_row_start.y, offset % 2);
+					cur_pos = sample_t::bond_t(cur_row_start.x + offset / 2, cur_row_start.y, offset % 2);
 					break;
 				case 1:
 					cur_pos =
-						BondPos(cur_row_start.x - offset / 2 - offset % 2, cur_row_start.y + offset / 2, offset % 2);
+						sample_t::bond_t(cur_row_start.x - offset / 2 - offset % 2, cur_row_start.y + offset / 2, offset % 2);
 					break;
 				case 2:
-					cur_pos = BondPos(cur_row_start.x, cur_row_start.y - (offset + 1) / 2, offset % 2);
+					cur_pos = sample_t::bond_t(cur_row_start.x, cur_row_start.y - (offset + 1) / 2, offset % 2);
 					break;
 				}
 
@@ -1353,34 +1200,34 @@ struct Sample
 
 				if (n++ >= vacancies)
 				{
-					cfg.bond_occ[cur_pos.canonical(w, h).index(w)] = true;
-					for (auto& vtx : geom.get_vertices(cur_pos, w, h))
-						cfg.vertex_occ[vtx.index(w)]++;
+					sample.cfg.bond_occ[sample.geom.principal(cur_pos).index(w)] = true;
+					for (auto& vtx : sample.geom.get_vertices(cur_pos))
+						sample.cfg.vertex_occ[vtx.index(w)]++;
 				}
 			}
 
 			switch (orientation)
 			{
 			case 0:
-				cur_row_start = BondPos(cur_row_start.x, cur_row_start.y + 2, 0);
+				cur_row_start = sample_t::bond_t(cur_row_start.x, cur_row_start.y + 2, 0);
 				break;
 			case 1:
-				cur_row_start = BondPos(cur_row_start.x - 2, cur_row_start.y, 0);
+				cur_row_start = sample_t::bond_t(cur_row_start.x - 2, cur_row_start.y, 0);
 				break;
 			case 2:
-				cur_row_start = BondPos(cur_row_start.x + 2, cur_row_start.y - 2, 0);
+				cur_row_start = sample_t::bond_t(cur_row_start.x + 2, cur_row_start.y - 2, 0);
 				break;
 			}
 		}
 
-		cfg.j4_total = -1;
-		cfg.clusters_total = 0;
+		sample.cfg.j4_total = -1;
+		sample.cfg.clusters_total = 0;
 	}
 
-	template <typename Rng> void load_from(std::string file, Rng& rng, int vacancies, int line_number=-1)
+	template <typename Rng> void load_from(sample_t& sample, std::string file, Rng& rng, int vacancies, int line_number = -1)
 	{
-		std::fill(cfg.bond_occ.begin(), cfg.bond_occ.end(), false);
-		std::fill(cfg.vertex_occ.begin(), cfg.vertex_occ.end(), 0);
+		std::fill(sample.cfg.bond_occ.begin(), sample.cfg.bond_occ.end(), false);
+		std::fill(sample.cfg.vertex_occ.begin(), sample.cfg.vertex_occ.end(), 0);
 
 		std::ifstream ifs(file);
 		if (ifs.fail())
@@ -1388,7 +1235,7 @@ struct Sample
 
 		std::string line;
 		std::vector<std::string> lines;
-		std::vector<BondPos> positions;
+		std::vector<sample_t::bond_t> positions;
 		while (std::getline(ifs, line))
 			lines.push_back(line);
 
@@ -1407,630 +1254,69 @@ struct Sample
 			while (std::getline(ss2, token2, ','))
 				nums.push_back(std::stoi(token2));
 
-			positions.push_back(BondPos(nums[0], nums[1], nums[2]));
+			positions.push_back(sample_t::bond_t(nums[0], nums[1], (int8_t) nums[2]));
 		}
 
-		if (positions.size() != (uint)(w * h / 3))
+		if (positions.size() != (uint)(sample.w * sample.h / 3))
 			throw "file loading failed";
 
 		std::shuffle(positions.begin(), positions.end(), rng);
 		for (uint i = vacancies; i < positions.size(); i++)
 		{
 			const auto& pos = positions[i];
-			cfg.bond_occ[pos.index(w)] = true;
-			for (auto& vtx : geom.get_vertices(pos, w, h))
-				cfg.vertex_occ[vtx.index(w)]++;
+			sample.cfg.bond_occ[pos.index(sample.w)] = true;
+			for (auto& vtx : sample.geom.get_vertices(pos))
+				sample.cfg.vertex_occ[vtx.index(sample.w)]++;
 		}
 
-		cfg.j4_total = -1;
-		cfg.clusters_total = -1;
+		sample.cfg.j4_total = -1;
+		sample.cfg.clusters_total = -1;
 	}
 
-	template <typename Rng> void reconfigure_root3(Rng& rng, int vacancies = 0)
+	template<typename Rng> void reconfigure_root3(sample_t& sample, Rng& rng, int vacancies = 0)
 	{
-		if (w != h || w % 3)
+		if (sample.w % 3 || sample.h % 3)
 			throw "";
 
-		std::fill(cfg.bond_occ.begin(), cfg.bond_occ.end(), false);
-		std::fill(cfg.vertex_occ.begin(), cfg.vertex_occ.end(), 0);
+		std::fill(sample.cfg.bond_occ.begin(), sample.cfg.bond_occ.end(), false);
+		std::fill(sample.cfg.vertex_occ.begin(), sample.cfg.vertex_occ.end(), 0);
 
-		int offset = (int)(rng() % 6);
+		int offset = (int) (rng() % 6);
 
 		int n = 0;
-		for (int i = 0; i < w; i += 3)
-			for (int j = 0; j < w; j += 3)
+		for (int i = 0; i < sample.w; i += 3)
+			for (int j = 0; j < sample.h; j += 3)
 				for (int s = 0; s < 3; s++)
 					if (n++ >= vacancies)
 					{
-						BondPos pos;
-						pos = BondPos(i + offset / 2 + s, j + s, offset % 2);
-						cfg.bond_occ[pos.canonical(w, h).index(w)] = true;
-						for (auto& vtx : geom.get_vertices(pos, w, h))
-							cfg.vertex_occ[vtx.index(w)]++;
+						sample_t::bond_t pos;
+						pos = sample_t::bond_t(i + offset / 2 + s, j + s, (int8_t) (offset % 2));
+						sample.cfg.bond_occ[sample.geom.principal(pos).index(sample.w)] = true;
+						for (auto& vtx : sample.geom.get_vertices(pos))
+							sample.cfg.vertex_occ[vtx.index(sample.w)]++;
 					}
 
-		cfg.j4_total = 0;
-		cfg.clusters_total = 0;
+		sample.cfg.j4_total = 0;
+		sample.cfg.clusters_total = 0;
 	}
 };
 
-namespace std
-{
-template <> struct hash<Sample>
-{
-	std::size_t operator()(const Sample& x) const
-	{
-		std::size_t seed = 0;
-		for (size_t i = 0; i < x.cfg.bond_occ.size(); i++)
-		{
-			if (x.cfg.bond_occ[i])
-				seed ^= std::hash<BondPos>()(BondPos::from_index((uint32_t)i, x.w))
-					+ 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		}
-		return seed;
-	}
-};
-}
-
-struct SampleDimer
-{
-  private:
-	std::vector<BondPos> _pocket, _Abar;
-	std::unordered_set<BondPos> _candidates;
-
-  public:
-	int32_t w, h;
-	DimerGeometryProvider geom;
-
-	struct Configuration
-	{
-		std::vector<bool> bond_occ;
-		std::vector<uint8_t> vertex_occ;
-	};
-
-	Configuration cfg;
-
-	SampleDimer() : w(0), h(0) {}
-
-	SampleDimer(int32_t w, int32_t h) : w(w), h(h)
-	{
-		cfg.bond_occ = std::vector<bool>(w * h * 2, false);
-		cfg.vertex_occ = std::vector<uint8_t>(w * h);
-	}
-
-	SampleDimer(int32_t w, int32_t h, const std::vector<BondPos>& dimers) : w(w), h(h)
-	{
-		cfg.bond_occ = std::vector<bool>(w * h * 2, false);
-		cfg.vertex_occ = std::vector<uint8_t>(w * h);
-		for (auto& i : dimers)
-			cfg.bond_occ[i.index(w)] = true;
-
-		regenerate_occupation();
-	}
-
-	void regenerate_occupation()
-	{
-		std::fill(cfg.vertex_occ.begin(), cfg.vertex_occ.end(), 0);
-
-		for (uint i = 0; i < cfg.bond_occ.size(); i++)
-			if (cfg.bond_occ[i])
-			{
-				auto tri = BondPos::from_index(i, w);
-				for (auto& vtx : geom.get_vertices(tri, w, h))
-					cfg.vertex_occ[vtx.index(w)]++;
-			}
-	}
-
-	int calculate_winding_number(BondPos start) const
-	{
-		BondPos cpos = start;
-		int tot = 0;
-		int sign = 1;
-
-		while (true)
-		{
-			if (cfg.bond_occ[cpos.index(w)])
-				tot += sign;
-
-			switch (start.s)
-			{
-			case 0:
-				cpos = BondPos(cpos.x, cpos.y + 1, 0);
-				break;
-			case 1:
-				cpos = BondPos(cpos.x + 1, cpos.y, 1);
-				break;
-			}
-
-			sign *= -1;
-			cpos = cpos.canonical(w, h);
-
-			if (cpos == start)
-				break;
-		}
-		return tot;
-	}
-
-	std::vector<int> calculate_winding_numbers() const
-	{
-		std::vector<int> ret;
-
-		for (int dir = 0; dir < 2; dir++)
-			ret.push_back(calculate_winding_number(BondPos(0, 0, dir)));
-
-		return ret;
-	}
-
-	BondPos dimer_reflect(BondPos pos, VertexPos center, int dir)
-	{
-		auto p = pos.center_at(center, w, h);
-		int32_t cx = center.x, cy = center.y;
-		BondPos np;
-		switch (dir)
-		{
-		case 0:
-			np = !p.s ? BondPos(cx + p.x, cy - p.y, 0) : BondPos(cx + p.x, cy - p.y - 1, 1);
-			break;
-		case 1:
-			np = BondPos(cx + p.y, cy + p.x, 1 - p.s);
-			break;
-		case 2:
-			np = !p.s ? BondPos(cx - p.x - 1, cy + p.y, 0) : BondPos(cx - p.x, cy + p.y, 1);
-			break;
-		case 3:
-			np = !p.s ? BondPos(cx - p.y, cy - p.x - 1, 1) : BondPos(cx - p.y - 1, cy - p.x, 0);
-			break;
-		}
-
-		return np.canonical(w, h);
-	}
-
-	template <typename Rng> int pocket_move(Rng& rng)
-	{
-		VertexPos symc;
-		int syma;
-
-		BondPos seed(0, 0, -1);
-		while (seed.s == -1)
-		{
-			uint candidate = (uint)(rng() % cfg.bond_occ.size());
-			symc = VertexPos((int)(rng() % w), (int)(rng() % h));
-			syma = (int)(rng() % 4);
-
-			if (cfg.bond_occ[candidate])
-			{
-				seed = BondPos::from_index(candidate, w);
-				if (cfg.bond_occ[dimer_reflect(seed, symc, syma).index(w)])
-					seed = BondPos(0, 0, -1);
-			}
-		}
-
-		_Abar.clear();
-		_pocket.clear();
-		_pocket.push_back(seed);
-
-		cfg.bond_occ[seed.index(w)] = false;
-		for (auto& i : geom.get_vertices(seed, w, h))
-		{
-			ASSERT(cfg.vertex_occ[i.index(w)] > 0);
-			cfg.vertex_occ[i.index(w)]--;
-		}
-
-		int length = 0;
-		while (_pocket.size() > 0)
-		{
-			length++;
-			auto el = _pocket.back();
-			_pocket.pop_back();
-
-			auto moved = dimer_reflect(el, symc, syma);
-			_Abar.push_back(moved);
-
-			_candidates.clear();
-
-			// add target overlaps to candidates
-			for (auto& i : geom.get_vertices(moved, w, h))
-				if (cfg.vertex_occ[i.index(w)] > 0)
-					for (const auto& trimer_pos : geom.get_bonds(i, w, h))
-						if (cfg.bond_occ[trimer_pos.index(w)])
-							_candidates.insert(trimer_pos);
-
-			for (const auto& pos : _candidates)
-			{
-				_pocket.push_back(pos);
-				cfg.bond_occ[pos.index(w)] = false;
-				for (auto& vtx : geom.get_vertices(pos, w, h))
-				{
-					ASSERT(cfg.vertex_occ[vtx.index(w)] > 0);
-					cfg.vertex_occ[vtx.index(w)]--;
-				}
-			}
-		}
-
-		for (auto& i : _Abar)
-		{
-			ASSERT(cfg.bond_occ[i.index(w)] == false)
-			cfg.bond_occ[i.index(w)] = true;
-
-			for (auto& vtx : geom.get_vertices(i, w, h))
-				cfg.vertex_occ[vtx.index(w)]++;
-		}
-
-#ifdef TEST
-		auto occupations = cfg.vertex_occ;
-		regenerate_occupation();
-		ASSERT(occupations == cfg.vertex_occ)
-#endif
-
-		return length;
-	}
-};
-
-struct VertexPos2
-{
-	int32_t x, y;
-	int8_t s;
-
-	VertexPos2() : x(0), y(0), s(0) {}
-	VertexPos2(int32_t x, int32_t y, int8_t s) : x(x), y(y), s(s) {}
-
-	uint32_t index(int w) const { return (x + y * w) * 2 + s; }
-	static VertexPos2 from_index(uint32_t index, int w)
-	{
-		uint32_t half = index / 2;
-		return VertexPos2(half % w, half / w, index % 2);
-	}
-
-	bool operator==(const VertexPos2& other) const { return x == other.x && y == other.y && s == other.s; }
-};
-
-struct BondPos3
-{
-	int32_t x, y;
-	int8_t s;
-
-	BondPos3() : x(0), y(0), s(0) {}
-	BondPos3(int x, int y, int s) : x(x), y(y), s((int8_t)s) {}
-
-	uint32_t index(int w) const { return (x + y * w) * 3 + s; }
-	static BondPos3 from_index(uint32_t index, int w)
-	{
-		uint32_t half = index / 3;
-		return BondPos3(half % w, half / w, index % 3);
-	}
-
-	bool operator==(const BondPos3& other) const { return x == other.x && y == other.y && s == other.s; }
-};
-
-std::ostream& operator<<(std::ostream& o, const VertexPos2& v) { return o << "(" << v.x << "," << v.y << "," << (int)v.s << ")"; }
-std::ostream& operator<<(std::ostream& o, const BondPos3& v)
-{
-	return o << "(" << v.x << "," << v.y << "," << (int)v.s << ")";
-}
-
-namespace std
-{
-template <> struct hash<VertexPos2>
-{
-	std::size_t operator()(const VertexPos2& x) const
-	{
-		std::size_t seed = std::hash<int32_t>()(x.x);
-		seed ^= std::hash<int32_t>()(x.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		return seed;
-	}
-};
-template <> struct hash<BondPos3>
-{
-	std::size_t operator()(const BondPos3& x) const
-	{
-		std::size_t seed = std::hash<int32_t>()(x.x);
-		seed ^= std::hash<int32_t>()(x.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<int32_t>()(x.s) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		return seed;
-	}
-};
-} // namespace std
-
-struct DimerHexaGeometryProvider
-{
-	VertexPos canonicalize(VertexPos p, int w, int h) const
-	{
-		while (p.y >= h)
-		{
-			p.x -= h;
-			p.y -= h;
-		}
-		while (p.y < 0)
-		{
-			p.x += h;
-			p.y += h;
-		}
-		p.x = pmod(p.x, w);
-
-		return p;
-	}
-
-	BondPos3 canonicalize(BondPos3 p, int w, int h) const
-	{
-		auto canon = canonicalize(VertexPos(p.x, p.y), w, h);
-		return BondPos3(canon.x, canon.y, p.s);
-	}
-
-	VertexPos2 canonicalize(VertexPos2 p, int w, int h) const
-	{
-		auto canon = canonicalize(VertexPos(p.x, p.y), w, h);
-		return VertexPos2(canon.x, canon.y, p.s);
-	}
-
-	std::array<VertexPos2, 2> get_vertices(BondPos3 pos, int w, int h) const
-	{
-		std::array<VertexPos2, 2> r;
-		r[0] = {pos.x, pos.y, 0};
-
-		if (pos.s == 0)
-			r[1] = {pos.x, pos.y, 1};
-		else if (pos.s == 1)
-			r[1] = {pos.x-1, pos.y, 1};
-		else
-			r[1] = {pos.x, pos.y-1, 1};
-
-		r[0] = canonicalize(r[0], w, h);
-		r[1] = canonicalize(r[1], w, h);
-
-		return r;
-	}
-
-	std::array<std::array<BondPos3, 3>, 2> vertex_dimers = {
-		std::array<BondPos3, 3>{ BondPos3{0, 0, 0}, {0, 0, 1}, {0, 0, 2} },
-		std::array<BondPos3, 3>{ BondPos3{0, 0, 0}, {0, 1, 2}, {1, 0, 1} },
-	};
-
-	std::array<BondPos3, 3> get_bonds(VertexPos2 pos, int w, int h) const
-	{
-		std::array<BondPos3, 3> r;
-
-		for (int i = 0; i < 3; i++)
-		{
-			r[i] = vertex_dimers[pos.s][i];
-			r[i].x += pos.x;
-			r[i].y += pos.y;
-			r[i] = canonicalize(r[i], w, h);
-		}
-
-		return r;
-	}
-
-	VertexPos vertex_reflect(VertexPos pos, VertexPos center, int dir, int w, int h)
-	{
-		pos.x -= center.x;
-		pos.y -= center.y;
-
-		VertexPos np;
-
-		switch (dir)
-		{
-		default:
-		case 0:
-			np = VertexPos(pos.x+pos.y, -pos.y);
-			break;
-		case 1:
-			np = VertexPos(pos.y, pos.x);
-			break;
-		case 2:
-			np = VertexPos(-pos.x, pos.x+pos.y);
-			break;
-		case 3:
-			np = VertexPos(-pos.x-pos.y, pos.y);
-			break;
-		case 4:
-			np = VertexPos(-pos.y, -pos.x);
-			break;
-		case 5:
-			np = VertexPos(pos.x, -pos.x-pos.y);
-			break;
-		}
-
-		np.x += center.x;
-		np.y += center.y;
-		return canonicalize(np, w, h);
-	}
-
-	std::array<std::array<BondPos3, 6>, 3> dimer_reflections = {
-		std::array<BondPos3, 6>{ BondPos3{1, -1, 1}, {0, 0, 0}, {-1, 1, 2}, {-1, 0, 1}, {-1, -1, 0}, {0, -1, 2} },
-		std::array<BondPos3, 6>{ BondPos3{0, -1, 0}, {0, 0, 2}, {0, 0, 1}, {-1, 0, 0}, {-1, 0, 2}, {0, -1, 1} },
-		std::array<BondPos3, 6>{ BondPos3{0, 0, 2}, {0, 0, 1}, {-1, 0, 0}, {-1, 0, 2}, {0, -1, 1}, {0, -1, 0} }
-	};
-
-	BondPos3 dimer_reflect(BondPos3 pos, VertexPos center, int dir, int w, int h)
-	{
-		VertexPos vp = vertex_reflect(VertexPos(pos.x, pos.y), center, dir, w, h);
-		BondPos3 np = BondPos3(dimer_reflections[pos.s][dir]);
-		np.x += vp.x + center.x;
-		np.y += vp.y + center.y;
-		return canonicalize(np, w, h);
-	}
-};
-
-struct SampleDimerHexa
-{
-  private:
-	std::vector<BondPos3> _pocket, _Abar;
-	std::unordered_set<BondPos3> _candidates;
-
-  public:
-	int32_t w, h;
-	DimerHexaGeometryProvider geom;
-
-	struct Configuration
-	{
-		std::vector<bool> bond_occ;
-		std::vector<uint8_t> vertex_occ;
-	};
-
-	Configuration cfg;
-
-	SampleDimerHexa() : w(0), h(0) {}
-
-	SampleDimerHexa(int32_t w, int32_t h) : w(w), h(h)
-	{
-		cfg.bond_occ = std::vector<bool>(w * h * 3, false);
-		cfg.vertex_occ = std::vector<uint8_t>(w * h * 2, 0);
-	}
-
-	SampleDimerHexa(int32_t w, int32_t h, const std::vector<BondPos3>& dimers) : w(w), h(h)
-	{
-		cfg.bond_occ = std::vector<bool>(w * h * 3, false);
-		cfg.vertex_occ = std::vector<uint8_t>(w * h * 2, 0);
-
-		for (auto& i : dimers)
-			cfg.bond_occ[i.index(w)] = true;
-
-		regenerate_occupation();
-	}
-
-	void regenerate_occupation()
-	{
-		std::fill(cfg.vertex_occ.begin(), cfg.vertex_occ.end(), 0);
-
-		for (uint i = 0; i < cfg.bond_occ.size(); i++)
-			if (cfg.bond_occ[i])
-			{
-				auto tri = BondPos3::from_index(i, w);
-				for (auto& vtx : geom.get_vertices(tri, w, h))
-					cfg.vertex_occ[vtx.index(w)]++;
-			}
-	}
-
-	int calculate_winding_number(int dir) const
-	{
-		BondPos3 pos(0, 0, 0);
-		if (dir == 0)
-			pos.s = 2;
-		else
-			pos.s = 1;
-
-		int tot = -w / 3;
-
-		while (true)
-		{
-			if (cfg.bond_occ[pos.index(w)])
-				tot++;
-
-			if (dir == 0)
-				pos.x++;
-			else
-				pos.y++;
-
-			pos = geom.canonicalize(pos, w, h);
-
-			if (pos.x == 0 && pos.y == 0)
-				break;
-		}
-
-		return tot;
-	}
-
-	std::pair<int, int> calculate_topo_sector() const
-	{
-		int wa = calculate_winding_number(0);
-		int wb = calculate_winding_number(1);
-
-		// int ri = (wa - wb) / 3, rj = (2 * wa + wb) / 3;
-		return std::make_pair(wa, wb);
-	}
-
-	template <typename Rng> int pocket_move(Rng& rng)
-	{
-		VertexPos symc;
-		int syma;
-
-		BondPos3 seed(0, 0, -1);
-		while (seed.s == -1)
-		{
-			uint candidate = (uint)(rng() % cfg.bond_occ.size());
-			symc = VertexPos((int)(rng() % w), (int)(rng() % h));
-			syma = (int)(rng() % 6);
-
-			if (cfg.bond_occ[candidate])
-			{
-				seed = BondPos3::from_index(candidate, w);
-				if (cfg.bond_occ[geom.dimer_reflect(seed, symc, syma, w, h).index(w)])
-					seed.s = -1;
-			}
-		}
-
-		_Abar.clear();
-		_pocket.clear();
-		_pocket.push_back(seed);
-
-		cfg.bond_occ[seed.index(w)] = false;
-		for (auto& i : geom.get_vertices(seed, w, h))
-		{
-			ASSERT(cfg.vertex_occ[i.index(w)] > 0);
-			cfg.vertex_occ[i.index(w)]--;
-		}
-
-		int length = 0;
-		while (_pocket.size() > 0)
-		{
-			length++;
-			auto el = _pocket.back();
-			_pocket.pop_back();
-
-			auto moved = geom.dimer_reflect(el, symc, syma, w, h);
-			_Abar.push_back(moved);
-
-			_candidates.clear();
-
-			// add target overlaps to candidates
-			for (auto& i : geom.get_vertices(moved, w, h))
-				if (cfg.vertex_occ[i.index(w)] > 0)
-					for (const auto& trimer_pos : geom.get_bonds(i, w, h))
-						if (cfg.bond_occ[trimer_pos.index(w)])
-							_candidates.insert(trimer_pos);
-
-			for (const auto& pos : _candidates)
-			{
-				_pocket.push_back(pos);
-				cfg.bond_occ[pos.index(w)] = false;
-				for (auto& vtx : geom.get_vertices(pos, w, h))
-				{
-					ASSERT(cfg.vertex_occ[vtx.index(w)] > 0);
-					cfg.vertex_occ[vtx.index(w)]--;
-				}
-			}
-		}
-
-		for (auto& i : _Abar)
-		{
-			ASSERT(cfg.bond_occ[i.index(w)] == false)
-			cfg.bond_occ[i.index(w)] = true;
-
-			for (auto& vtx : geom.get_vertices(i, w, h))
-				cfg.vertex_occ[vtx.index(w)]++;
-		}
-
-#ifdef TEST
-		auto occupations = cfg.vertex_occ;
-		regenerate_occupation();
-		ASSERT(occupations == cfg.vertex_occ)
-#endif
-
-		return length;
-	}
-};
-
-template <typename T> inline void write_binary(std::ostream& o, const T& t)
+template<typename T> inline void write_binary(std::ostream& o, const T& t)
 {
 	o.write(reinterpret_cast<const char*>(&t), sizeof(t));
 }
 
 struct PTWorker
 {
-	const Options options;
+	using Geometry = TrimerTriangularGeometry;
 
+	const Options options;
 	double temperature;
-	Sample sample;
+
+	Sample<Geometry> sample;
+	Observer<Geometry> obs;
+	SampleInitializer<Geometry> init;
+
 	std::minstd_rand rng;
 
 	bool io_initialized = false;
@@ -2053,8 +1339,6 @@ struct PTWorker
 
 	Accumulator<double> timing;
 
-	double pocket_fraction = 0.08;
-
 	int total_steps = 0;
 	int previous_position_output = 0;
 
@@ -2072,27 +1356,26 @@ struct PTWorker
 	PTWorker(const Options& opt, double temperature, bool output) : options(opt), temperature(temperature), timing(2, 1)
 	{
 		start_time = std::chrono::high_resolution_clock::now();
-		sample = Sample(opt.domain_length, opt.domain_length);
+		sample = Sample<Geometry>(opt.domain_length, opt.domain_length);
 
 		rng.seed(
 			std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
 				.count());
 
-		sample.initialize(opt, rng);
-		pocket_fraction = options.accumulator_interval / 100.;
+		init.initialize(sample, opt, rng);
 
 		if (output)
 			enable_io();
 
 #ifdef ERGOTEST
 		std::stringstream fname;
-		fname << "new-data/worm-timing/" << opt.domain_length << "_" << pocket_fraction << ".csv";
+		fname << "new-data/worm-timing/" << opt.domain_length << "_" << options.pocket_fraction << ".csv";
 		ofunique = std::ofstream(fname.str());
 		fname.str("");
-		fname << "new-data/worm-timing/" << opt.domain_length << "_" << pocket_fraction << "_thist.dat";
+		fname << "new-data/worm-timing/" << opt.domain_length << "_" << options.pocket_fraction << "_thist.dat";
 		oftrimerhist = std::ofstream(fname.str(), std::ios::binary);
 		fname.str("");
-		fname << "new-data/worm-timing/" << opt.domain_length << "_" << pocket_fraction << "_topohist.dat";
+		fname << "new-data/worm-timing/" << opt.domain_length << "_" << options.pocket_fraction << "_topohist.dat";
 		oftopohist = std::ofstream(fname.str(), std::ios::binary);
 #endif
 	}
@@ -2165,14 +1448,13 @@ struct PTWorker
 		for (int i = 0; i < options.decorr_interval; i++)
 		{
 			if (options.idealbrickwall)
-				sample.reconfigure_brick_wall(rng, false);
+				init.reconfigure_brick_wall(sample, rng, false);
 			else if (options.idealrt3)
-				sample.reconfigure_root3(rng);
+				init.reconfigure_root3(sample, rng);
 			else if (options.metropolis)
 			{
 				sample.calculate_energy();
-				Sample::Configuration copy = sample.cfg;
-
+				Sample<Geometry>::Configuration copy = sample.cfg;
 				sample.metropolis_move(rng);
 				sample.calculate_energy();
 
@@ -2183,18 +1465,29 @@ struct PTWorker
 			}
 			else
 			{
-				if (uniform(rng) < pocket_fraction)
+				if (uniform(rng) < options.pocket_fraction)
 					sample.pocket_move(rng, u, j4);
-				else
+				else if (j4 == 0)
 					sample.worm_move(rng, u);
+				else
+				{
+					sample.calculate_energy();
+					Sample<Geometry>::Configuration copy = sample.cfg;
+					sample.worm_move(rng, u);
+					sample.calculate_energy();
+
+					double d_energy = (sample.cfg.j4_total - copy.j4_total) * j4;
+					if (uniform(rng) <= 1 - std::exp(-d_energy))
+						std::swap(copy, sample.cfg);
+				}
 			}
 
 #ifdef ERGOTEST
 			if (sample.w <= 15)
 				seen.insert(sample.cfg.bond_occ);
-			write_binary<float>(oftrimerhist, (float)sample.trimer_correlation(BondPos(1, 0, 1)));
+			write_binary<float>(oftrimerhist, (float)obs.trimer_correlation(sample, sample_t::bond_t(1, 0, 1)));
 
-			auto sector = sample.calculate_topo_sector();
+			auto sector = obs.calculate_topo_sector(sample);
 			write_binary<int16_t>(oftopohist, (int16_t)std::get<0>(sector));
 			write_binary<int16_t>(oftopohist, (int16_t)std::get<1>(sector));
 			write_binary<int16_t>(oftopohist, (int16_t)std::get<2>(sector));
@@ -2216,21 +1509,21 @@ struct PTWorker
 
 		if (io_initialized)
 		{
-			Sample::Observables obs;
+			Observer<Geometry>::Observables ordervals;
 			double energy = 0;
 
 			if (options.out_monomono)
-				sample.record_partial_monomer_correlations(amonomono, rng, 32);
+				obs.record_partial_monomer_correlations(sample, amonomono, rng, 32);
 			if (options.out_clustercount)
-				sample.record_cluster_count(aclustercount);
+				obs.record_cluster_count(sample, aclustercount);
 			if (options.out_monodi)
-				sample.record_dimer_monomer_correlations(amonodi, rng, 10);
+				obs.record_dimer_monomer_correlations(sample, amonodi, rng, 10);
 			if (options.out_tritri)
-				sample.record_partial_trimer_correlations(atritri, rng, 20. / (sample.w * sample.h / 3));
+				obs.record_partial_trimer_correlations(sample, atritri, rng, 20. / (sample.w * sample.h / 3));
 			if (options.out_energy)
-				energy = sample.record_energy(aenergy, options.u, options.j4);
+				energy = obs.record_energy(sample, aenergy, options.u, options.j4);
 			if (options.out_order)
-				obs = sample.record_order_parameters(aorder);
+				ordervals = obs.record_order_parameters(sample, aorder);
 
 			auto end2 = std::chrono::high_resolution_clock::now();
 
@@ -2245,7 +1538,7 @@ struct PTWorker
 			{
 				for (uint j = 0; j < sample.cfg.bond_occ.size(); j++)
 					if (sample.cfg.bond_occ[j])
-						ofconf << BondPos::from_index(j, sample.w) << " ";
+						ofconf << decltype(sample)::bond_t::from_index(j, sample.w) << " ";
 				ofconf << std::endl;
 				previous_position_output = total_steps;
 			}
@@ -2253,15 +1546,15 @@ struct PTWorker
 			if (options.out_histogram)
 			{
 				write_binary<float>(ofhistogram, (float)energy);
-				write_binary<float>(ofhistogram, (float)obs.structure_factor_K);
-				write_binary<int32_t>(ofhistogram, obs.sublattice_polarization);
+				write_binary<float>(ofhistogram, (float)ordervals.structure_factor_K);
+				write_binary<int32_t>(ofhistogram, ordervals.sublattice_polarization);
 				ofhistogram.flush();
 			}
 
 			if (options.out_winding_histogram)
 			{
 				write_binary<float>(ofsector, (float)energy);
-				auto sector = sample.calculate_topo_sector();
+				auto sector = obs.calculate_topo_sector(sample);
 				write_binary<int16_t>(ofsector, (int16_t)std::get<0>(sector));
 				write_binary<int16_t>(ofsector, (int16_t)std::get<1>(sector));
 				write_binary<int16_t>(ofsector, (int16_t)std::get<2>(sector));
@@ -2470,8 +1763,9 @@ struct PTEnsemble
 struct MuCaWorker
 {
 	const Options options;
+	using Geometry = TrimerTriangularGeometry;
 
-	Sample sample;
+	Sample<Geometry> sample;
 	std::minstd_rand rng;
 
 	std::unordered_map<int, double> log_dos;
@@ -2488,7 +1782,7 @@ struct MuCaWorker
 
 	MuCaWorker(const Options& opt, std::function<double(int)> default_dos) : options(opt), default_dos(default_dos)
 	{
-		sample = Sample(opt.domain_length, opt.domain_length);
+		sample = Sample<Geometry>(opt.domain_length, opt.domain_length);
 
 		rng.seed(
 			std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
@@ -2496,7 +1790,8 @@ struct MuCaWorker
 
 		factor = options.multicanonical_init_factor;
 
-		sample.initialize(opt, rng);
+		SampleInitializer<Geometry> init;
+		init.initialize(sample, opt, rng);
 	}
 
 	void set_range(int min, int max)
@@ -2511,7 +1806,7 @@ struct MuCaWorker
 		for (int i = 0; i < options.decorr_interval; i++)
 		{
 			sample.calculate_energy();
-			Sample::Configuration copy = sample.cfg;
+			Sample<Geometry>::Configuration copy = sample.cfg;
 			sample.pocket_move(rng, infinity, 0);
 			sample.calculate_energy();
 
@@ -2838,6 +2133,10 @@ void sim(int argc, char** argv)
 	options.multicanonical_round_length = options.total_steps;
 	options.multicanonical_threads = options.accumulator_interval;
 
+#ifdef ERGOTEST
+	options.pocket_fraction = options.accumulator_interval / 100.;
+#endif
+
 	if (optstring.find('D') != std::string::npos)
 	{
 		std::minstd_rand rng;
@@ -2845,36 +2144,46 @@ void sim(int argc, char** argv)
 			std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
 				.count());
 
-		std::vector<BondPos> positions;
+		using Geometry = DimerSquareGeometry;
+		std::vector<Geometry::bond_t> positions;
 		for (int i = 0; i < options.domain_length; i += 2)
 			for (int j = 0; j < options.domain_length; j += 1)
-				positions.push_back(BondPos(i, j, 0));
+				positions.push_back(Geometry::bond_t(i, j, 0));
 
-		SampleDimer sample(options.domain_length, options.domain_length, positions);
+		Sample<Geometry> sample(options.domain_length, options.domain_length, positions);
+		Observer<Geometry> obs;
 
 		auto path = std::filesystem::path("new-data") / options.directory;
 		std::filesystem::create_directories(path);
 		std::ofstream ofhist(path / "winding-histogram.dat", std::ios::binary);
 		std::ofstream ofconf(path / "positions.dat");
 
+		std::uniform_real_distribution<> uniform(0., 1.);
+
 		int nstep = 0;
 		int prev_conf = 0;
 		while (nstep < options.total_steps)
 		{
 			for (int s = 0; s < options.decorr_interval; s++)
-				sample.pocket_move(rng);
+			{
+				if (uniform(rng) < options.pocket_fraction)
+					sample.pocket_move(rng, infinity, 0);
+				else
+					sample.worm_move(rng, infinity);
+			}
+
 			nstep += options.decorr_interval;
 
-			auto windings = sample.calculate_winding_numbers();
-			for (int i = 0; i < 2; i++)
-				write_binary<int16_t>(ofhist, (int16_t)windings[i]);
+			auto windings = obs.calculate_topo_sector(sample);
+			write_binary<int16_t>(ofhist, (int16_t) windings.first);
+			write_binary<int16_t>(ofhist, (int16_t) windings.second);
 			ofhist.flush();
 
 			if (nstep >= prev_conf + options.position_interval)
 			{
 				for (uint j = 0; j < sample.cfg.bond_occ.size(); j++)
 					if (sample.cfg.bond_occ[j])
-						ofconf << BondPos::from_index(j, sample.w) << " ";
+						ofconf << decltype(sample)::bond_t::from_index(j, sample.w) << " ";
 				ofconf << std::endl;
 				prev_conf = nstep;
 				std::cout << nstep << std::endl;
@@ -2888,13 +2197,14 @@ void sim(int argc, char** argv)
 			std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
 				.count());
 
-		std::vector<BondPos3> positions;
+		using Geometry = DimerHexagonalSkewGeometry;
+		std::vector<Geometry::bond_t> positions;
 		for (int i = 0; i < options.domain_length; i += 1)
 			for (int j = 0; j < options.accumulator_interval; j += 1)
-				// positions.push_back(BondPos3(i, j, 0));
-				positions.push_back(BondPos3(i, j, pmod(-i+j, 3)));
+				positions.push_back(Geometry::bond_t(i, j, 0));
 
-		SampleDimerHexa sample(options.domain_length, options.accumulator_interval, positions);
+		Sample<Geometry> sample(options.domain_length, options.accumulator_interval, positions);
+		Observer<Geometry> obs;
 
 		auto path = std::filesystem::path("new-data") / options.directory;
 		std::filesystem::create_directories(path);
@@ -2903,22 +2213,30 @@ void sim(int argc, char** argv)
 
 		int nstep = 0;
 		int prev_conf = 0;
+
+		std::uniform_real_distribution<> uniform(0., 1.);
 		while (nstep < options.total_steps)
 		{
 			for (int s = 0; s < options.decorr_interval; s++)
-				sample.pocket_move(rng);
+			{
+				if (uniform(rng) < options.pocket_fraction)
+					sample.pocket_move(rng, infinity, 0);
+				else
+					sample.worm_move(rng, infinity);
+			}
+
 			nstep += options.decorr_interval;
 
-			auto windings = sample.calculate_topo_sector();
-			write_binary<int16_t>(ofhist, (int16_t)windings.first);
-			write_binary<int16_t>(ofhist, (int16_t)windings.second);
+			auto windings = obs.calculate_topo_sector(sample);
+			write_binary<int16_t>(ofhist, (int16_t) windings.first);
+			write_binary<int16_t>(ofhist, (int16_t) windings.second);
 			ofhist.flush();
 
 			if (nstep >= prev_conf + options.position_interval)
 			{
 				for (uint j = 0; j < sample.cfg.bond_occ.size(); j++)
 					if (sample.cfg.bond_occ[j])
-						ofconf << BondPos3::from_index(j, sample.w) << " ";
+						ofconf << decltype(sample)::bond_t::from_index(j, sample.w) << " ";
 				ofconf << std::endl;
 				prev_conf = nstep;
 				std::cout << nstep << std::endl;
@@ -2964,25 +2282,26 @@ void test_optimizer()
 
 void test_pocket1()
 {
-	Sample sample(6, 6);
+	SampleInitializer<TrimerTriangularGeometry> init;
+	Sample<TrimerTriangularGeometry> sample(6, 6);
 	std::minstd_rand rng;
-	sample.reconfigure_brick_wall(rng);
+	init.reconfigure_brick_wall(sample, rng);
 
 	sample.calculate_energy();
-	ASSERT(sample.cfg.clusters_total == 0);
+	TEST_ASSERT2(sample.cfg.clusters_total == 0, sample.cfg.clusters_total);
 
 	double total = 0;
 	for (int i = 0; i < 300; i++)
 	{
 		total += sample.pocket_move(rng, infinity, 0);
 		sample.calculate_energy();
-		ASSERT(sample.cfg.clusters_total == 0);
+		TEST_ASSERT2(sample.cfg.clusters_total == 0, sample.cfg.clusters_total);
 
 		int ntri = 0;
 		for (auto j : sample.cfg.bond_occ)
 			if (j)
 				ntri++;
-		ASSERT(ntri == 6 * 6 / 3);
+		TEST_ASSERT2(ntri == 6 * 6 / 3, ntri);
 	}
 
 	std::cout << "pocket test finished with avg length " << total / 300. << std::endl;
@@ -2994,27 +2313,73 @@ void test_pocket1()
 	std::cout << "pocket test finished with avg length " << total / 300. << std::endl;
 }
 
-void test_worm1()
+void test_pocket2()
 {
-	Sample sample(6, 6);
+	SampleInitializer<TrimerTriangularGeometry> init;
+	Sample<TrimerTriangularGeometry> sample(12, 12);
 	std::minstd_rand rng;
-	sample.reconfigure_brick_wall(rng);
+	init.reconfigure_root3(sample, rng);
 
 	sample.calculate_energy();
-	ASSERT(sample.cfg.clusters_total == 0);
+	TEST_ASSERT2(sample.cfg.clusters_total == 0, sample.cfg.clusters_total);
+
+	int nj4 = sample.cfg.j4_total;
+
+	double total = 0;
+	for (int i = 0; i < 300; i++)
+	{
+		total += sample.pocket_move(rng, infinity, infinity);
+		sample.calculate_energy();
+		std::cout << sample.cfg.j4_total << std::endl;
+		TEST_ASSERT2(sample.cfg.clusters_total == 0, sample.cfg.clusters_total);
+		TEST_ASSERT2(sample.cfg.j4_total == nj4, sample.cfg.clusters_total);
+	}
+}
+
+void test_pocket3()
+{
+	SampleInitializer<TrimerTriangularGeometry> init;
+	Sample<TrimerTriangularGeometry> sample(12, 12);
+	std::minstd_rand rng;
+	init.reconfigure_brick_wall(sample, rng);
+
+	sample.calculate_energy();
+	TEST_ASSERT2(sample.cfg.clusters_total == 0, sample.cfg.clusters_total);
+
+	int nj4 = sample.cfg.j4_total;
+
+	double total = 0;
+	for (int i = 0; i < 300; i++)
+	{
+		total += sample.pocket_move(rng, infinity, -infinity);
+		sample.calculate_energy();
+		TEST_ASSERT2(sample.cfg.clusters_total == 0, sample.cfg.clusters_total);
+		TEST_ASSERT2(sample.cfg.j4_total == nj4, sample.cfg.clusters_total);
+	}
+}
+
+void test_worm1()
+{
+	SampleInitializer<TrimerTriangularGeometry> init;
+	Sample<TrimerTriangularGeometry> sample(6, 6);
+	std::minstd_rand rng;
+	init.reconfigure_brick_wall(sample, rng);
+
+	sample.calculate_energy();
+	TEST_ASSERT2(sample.cfg.clusters_total == 0, sample.cfg.clusters_total);
 
 	double total = 0;
 	for (int i = 0; i < 300; i++)
 	{
 		total += sample.worm_move(rng, infinity);
 		sample.calculate_energy();
-		ASSERT(sample.cfg.clusters_total == 0);
+		TEST_ASSERT2(sample.cfg.clusters_total == 0, sample.cfg.clusters_total);
 
 		int ntri = 0;
 		for (auto j : sample.cfg.bond_occ)
 			if (j)
 				ntri++;
-		ASSERT(ntri == 6 * 6 / 3);
+		TEST_ASSERT2(ntri == 6 * 6 / 3, ntri);
 	}
 
 	std::cout << "worm test finished with avg length " << total / 300. << std::endl;
@@ -3028,12 +2393,14 @@ void test_worm1()
 
 void test_brickwall()
 {
-	Sample sample(48, 48);
+	SampleInitializer<TrimerTriangularGeometry> init;
+	Sample<TrimerTriangularGeometry> sample(48, 48);
+
 	std::minstd_rand rng;
 	for (int i = 0; i < 3; i++)
 	{
 		for (int j = 0; j < 20; j++)
-			sample.reconfigure_brick_wall(rng);
+			init.reconfigure_brick_wall(sample, rng);
 
 		sample.calculate_energy();
 		TEST_ASSERT2(sample.cfg.j4_total == 48 * 48 / 2, sample.cfg.j4_total)
@@ -3042,7 +2409,10 @@ void test_brickwall()
 
 void test_symmetry()
 {
+	using Geom = TrimerTriangularGeometry;
+
 	int w = 12;
+	Geom geom(w, w);
 
 	for (int d = 0; d < 17; d++)
 	{
@@ -3050,7 +2420,7 @@ void test_symmetry()
 		for (int i = 0; i < w; i++)
 			for (int j = 0; j < w; j++)
 				for (int s = 0; s < 2; s++)
-					occupancies[BondPos(i, j, s).apply_symmetry(VertexPos(1, 2), d, w, w).index(w)] = true;
+					occupancies[geom.apply_symmetry(Geom::bond_t(i, j, (int8_t) s), Geom::vertex_t(1, 2), d).index(w)] = true;
 
 		TEST_ASSERT(std::find(occupancies.begin(), occupancies.end(), false) == occupancies.end());
 	}
@@ -3058,8 +2428,10 @@ void test_symmetry()
 
 void test_symmetry_hexa()
 {
-	DimerHexaGeometryProvider geom;
+	using Geom = DimerHexagonalSkewGeometry;
+
 	int w = 12;
+	Geom geom(w, w);
 	
 	for (int d = 0; d < 6; d++)
 	{
@@ -3067,7 +2439,7 @@ void test_symmetry_hexa()
 		for (int i = 0; i < w; i++)
 			for (int j = 0; j < w; j++)
 				for (int s = 0; s < 3; s++)
-					occupancies[geom.dimer_reflect(BondPos3(i, j, s), VertexPos(1, 2), d, w, w).index(w)] = true;
+					occupancies[geom.apply_symmetry(Geom::bond_t(i, j, (int8_t) s), LatticePos(1, 2), d).index(w)] = true;
 
 		TEST_ASSERT(std::find(occupancies.begin(), occupancies.end(), false) == occupancies.end());
 	}
@@ -3079,6 +2451,9 @@ int main(int argc, char** argv) { sim(argc, argv); }
 int main()
 {
 	test_pocket1();
+	test_pocket2();
+	test_pocket3();
+
 	test_worm1();
 	test_brickwall();
 	test_symmetry();

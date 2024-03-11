@@ -5,6 +5,7 @@ slurm-*.out
 *.png
 *.pyc
 *.out
+*.gch
 data/
 new-data/
 pocket

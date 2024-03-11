@@ -3,7 +3,10 @@
 #SBATCH --mem-per-cpu=1G
 #SBATCH --time=2-0
 #SBATCH --cpus-per-task=16
-#SBATCH --ntasks=12
+#SBATCH --ntasks=2
+
+srun --exclusive -n 1 -c 16 ./pocket 48 0 0.6 0.321:16:0.333 40000000 15 chAR 15000 temp/0.6-0.75 &
+srun --exclusive -n 1 -c 16 ./pocket 60 0 0.8 0.395:16:0.47 20000000 15 chAR 15000 temp/0.8-0.75 &
 
 # srun --exclusive -n 1 -c 16 ./pocket 24 0 0.5 0.3125:16:0.335 40000000 15 chAR 15000 vsweeps/binder/0.5c/ &
 # srun --exclusive -n 1 -c 16 ./pocket 36 0 0.5 0.3125:16:0.33 40000000 15 chAR 15000 vsweeps/binder/0.5c/ &

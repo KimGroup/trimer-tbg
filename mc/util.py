@@ -421,6 +421,8 @@ def show_positions(ax, positions, type="worm", show_monomers=False, color="black
     for x, y in doublons:
         doubpatches.append(mpatches.Circle(mono_coords(x, y), radius=1/np.sqrt(3)/2))
 
+    print(nj4)
+
     if show_monomers:
         ax.add_collection(matplotlib.collections.PatchCollection(monopatches, edgecolors="black", facecolors="lime", zorder=1.5))
         ax.add_collection(matplotlib.collections.PatchCollection(doubpatches, edgecolors="black", facecolors="red", zorder=1.5))
