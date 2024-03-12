@@ -91,62 +91,22 @@ template<int8_t UnitCellSize> struct hash<SublatticePos<UnitCellSize>>
 
 struct PeriodicBoundaryCondition
 {
-    int w, h;
-    PeriodicBoundaryCondition(int w, int h) : w(w), h(h) { }
-
-    LatticePos principal(const LatticePos& pos) const { return LatticePos(pmod(pos.x, w), pmod(pos.y, h)); }
-	template<int8_t n>
-    SublatticePos<n> principal(const SublatticePos<n>& pos) const { return SublatticePos<n>(pmod(pos.x, w), pmod(pos.y, h), pos.s); }
-
-	LatticePos center(const LatticePos& pos, const LatticePos& center) const
-	{
-		return LatticePos(pmod(pos.x - center.x + w / 2, w) - w / 2, pmod(pos.y - center.y + h / 2, h) - h / 2);
-	}
-	template<int8_t n>
-	SublatticePos<n> center(const SublatticePos<n>& pos, const LatticePos& center) const
-	{
-		return SublatticePos<n>(pmod(pos.x - center.x + w / 2, w) - w / 2, pmod(pos.y - center.y + h / 2, h) - h / 2, pos.s);
-	}
-};
-
-struct SkewBoundaryCondition
-{
-    int w, h;
-    SkewBoundaryCondition(int w, int h) : w(w), h(h) { }
+    int w, h, skew;
+    PeriodicBoundaryCondition(int w, int h, int skew) : w(w), h(h), skew(skew) { }
 
     LatticePos principal(const LatticePos& pos) const
 	{
-		auto copy = pos;
-		while (copy.y >= h)
-		{
-			copy.x -= h;
-			copy.y -= h;
-		}
-		while (copy.y < 0)
-		{
-			copy.x += h;
-			copy.y += h;
-		}
-
-		copy.x = pmod(copy.x, w);
-		return copy;
+		auto ymod = pmod(pos.y, h);
+		auto div = (pos.y - ymod) / h;
+		return LatticePos(pmod(pos.x - skew * div, w), ymod);
 	}
 
 	template<int8_t n>
     SublatticePos<n> principal(const SublatticePos<n>& pos) const
-    {
-        auto lat = principal(pos.lattice_pos());
-        return SublatticePos<n>(lat.x, lat.y, pos.s);
-    }
-
-	LatticePos center(const LatticePos& pos, const LatticePos& center) const
 	{
-		return pos - center;
-	}
-	template<int8_t n>
-	SublatticePos<n> center(const SublatticePos<n>& pos, const LatticePos& center) const
-	{
-		return pos - center;
+		auto ymod = pmod(pos.y, h);
+		auto div = (pos.y - ymod) / h;
+		return SublatticePos<n>(pmod(pos.x - skew * div, w), ymod, pos.s);
 	}
 };
 
@@ -199,7 +159,7 @@ struct TrimerTriangularGeometry : public TriangularGeometry, public BoundaryCond
     using vertex_t = LatticePos;
     using bond_t = SublatticePos<2>;
 
-    TrimerTriangularGeometry(int w, int h) : BoundaryCondition(w, h) { }
+    TrimerTriangularGeometry(int w, int h, int skew=0) : BoundaryCondition(w, h, skew) { }
 
     std::array<std::array<bond_t, 6>, 2> rotations = {
         std::array<bond_t, 6>{ bond_t{0, 0, 0}, {-1, 0, 1}, {-1, 0, 0}, {-1, -1, 1}, {0, -1, 0}, {0, -1, 1} },
@@ -225,11 +185,18 @@ struct TrimerTriangularGeometry : public TriangularGeometry, public BoundaryCond
         return reflections[pos.s][dir] + reflect(pos.lattice_pos(), dir);
 	}
 
+	bool are_symmetries_correct() const
+	{
+		if (this->w == this->h) return true;
+		if (this->w == this->h * 3 && this->skew == this->h) return true;
+		return false;
+	}
+
     constexpr int n_symmetries() const { return 20; }
 
 	bond_t apply_symmetry(const bond_t& pos, const LatticePos& c, int index) const
 	{
-		auto p = this->center(pos, c);
+		auto p = pos - c;
 
 		if (index < 12)
 			p = reflect(p, index % 6);
@@ -326,7 +293,7 @@ struct DimerHexagonalGeometry : public TriangularGeometry, public BoundaryCondit
     using vertex_t = SublatticePos<2>;
     using bond_t = SublatticePos<3>;
 
-    DimerHexagonalGeometry(int w, int h) : BoundaryCondition(w, h) { }
+    DimerHexagonalGeometry(int w, int h, int skew=0) : BoundaryCondition(w, h, skew) { }
 
 	std::array<vertex_t, 2> get_vertices(const bond_t& pos) const
 	{
@@ -371,6 +338,13 @@ struct DimerHexagonalGeometry : public TriangularGeometry, public BoundaryCondit
 	bond_t reflect(const bond_t& pos, int dir) const
 	{
         return reflections[pos.s][dir] + reflect(pos.lattice_pos(), dir);
+	}
+
+	bool are_symmetries_correct() const
+	{
+		if (this->w == this->h) return true;
+		if (this->w == this->h * 3 && this->skew == this->h) return true;
+		return false;
 	}
 
     constexpr int n_symmetries() const { return 6; }
@@ -432,14 +406,7 @@ struct DimerSquareGeometry : public BoundaryCondition
     using vertex_t = LatticePos;
     using bond_t = SublatticePos<2>;
 
-    DimerSquareGeometry(int w, int h) : BoundaryCondition(w, h)
-	{
-		if (w != h)
-		{
-			std::cout << "square geometry doesn't work with different sized lattices";
-			throw 0;
-		}
-	}
+    DimerSquareGeometry(int w, int h, int skew=0) : BoundaryCondition(w, h, skew) { }
 
 	LatticePos reflect(const LatticePos& pos, int dir) const
 	{
@@ -465,6 +432,13 @@ struct DimerSquareGeometry : public BoundaryCondition
 	bond_t reflect(const bond_t& pos, int dir) const
 	{
         return reflections[pos.s][dir] + reflect(pos.lattice_pos(), dir);
+	}
+
+	bool are_symmetries_correct() const
+	{
+		if (this->w == this->h) return true;
+		if (this->w == this->h * 2 && this->skew == this->h) return true;
+		return false;
 	}
 
     constexpr int n_symmetries() const { return 4; }

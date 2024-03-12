@@ -65,6 +65,7 @@ struct Options
 {
 	int domain_w;
 	int domain_h;
+	int domain_skew = 0;
 
 	int mono_vacancies = 0;
 
@@ -127,7 +128,7 @@ private:
 	std::unordered_map<bond_t, InteractionCount> _candidates;
 
 public:
-	int32_t w, h;
+	int w, h, skew;
 	Geometry geom;
 
 	struct Configuration
@@ -139,13 +140,13 @@ public:
 
 	Configuration cfg;
 
-	Sample() : w(0), h(0), geom(0, 0)
+	Sample() : w(0), h(0), skew(0), geom(0, 0)
 	{
 		cfg.j4_total = 0;
 		cfg.clusters_total = 0;
 	}
 
-	Sample(int32_t w, int32_t h) : w(w), h(h), geom(w, h)
+	Sample(int w, int h, int skew=0) : w(w), h(h), skew(skew), geom(w, h, skew)
 	{
 		cfg.bond_occ = std::vector<bool>(w * h * bond_t::unit_cell_size(), false);
 		cfg.vertex_occ = std::vector<uint8_t>(w * h * vertex_t::unit_cell_size(), 0);
@@ -153,7 +154,7 @@ public:
 		cfg.clusters_total = 0;
 	}
 
-	Sample(int32_t w, int32_t h, const std::vector<bond_t>& bonds) : Sample(w, h)
+	Sample(int32_t w, int32_t h, int skew, const std::vector<bond_t>& bonds) : Sample(w, h, skew)
 	{
 		for (const auto& i : bonds)
 			cfg.bond_occ[i.index(w)] = true;
@@ -271,6 +272,12 @@ public:
 	template<typename Rng> int pocket_move(Rng& rng, double u, double j4)
 	{
 		calculate_energy();
+
+		if (!geom.are_symmetries_correct())
+		{
+			std::cout << "cannot use pocket with current lattice; use only worms instead" << std::endl;
+			ASSERT(false);
+		}
 
 		LatticePos symc;
 		int syma;
@@ -738,7 +745,7 @@ struct Observer<TrimerTriangularGeometry<>>
 		{
 			auto dimer = dimers[i];
 			for (auto j : isolated_monos)
-				vals[sample.geom.principal(sample.geom.rotate(sample.geom.center(j, dimer.first), -dimer.second)).index(sample.w)]++;
+				vals[sample.geom.principal(sample.geom.rotate(j - dimer.first, -dimer.second)).index(sample.w)]++;
 		}
 
 		a.record(vals);
@@ -1361,7 +1368,7 @@ struct SampleInitializer<DimerSquareGeometry<BoundaryCondition>>
 			for (int j = 0; j < sample.h; j += 1)
 				positions.push_back(bond_t(i, j, 0));
 
-		sample = sample_t(sample.w, sample.h, positions);
+		sample = sample_t(sample.w, sample.h, sample.skew, positions);
 	}
 };
 
@@ -1378,7 +1385,7 @@ struct SampleInitializer<DimerHexagonalGeometry<BoundaryCondition>>
 			for (int j = 0; j < sample.h; j += 1)
 				positions.push_back(bond_t(i, j, 0));
 
-		sample = sample_t(sample.w, sample.h, positions);
+		sample = sample_t(sample.w, sample.h, sample.skew, positions);
 	}
 };
 
@@ -1437,7 +1444,7 @@ struct PTWorker
 	PTWorker(const Options& opt, double temperature, bool output) : options(opt), temperature(temperature), timing(2, 1)
 	{
 		start_time = std::chrono::high_resolution_clock::now();
-		sample = Sample<Geometry>(opt.domain_w, opt.domain_h);
+		sample = Sample<Geometry>(opt.domain_w, opt.domain_h, opt.domain_skew);
 
 		rng.seed(
 			std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
@@ -1863,7 +1870,7 @@ struct MuCaWorker
 
 	MuCaWorker(const Options& opt, std::function<double(int)> default_dos) : options(opt), default_dos(default_dos)
 	{
-		sample = Sample<Geometry>(opt.domain_w, opt.domain_h);
+		sample = Sample<Geometry>(opt.domain_w, opt.domain_h, opt.domain_skew);
 
 		rng.seed(
 			std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
@@ -2145,7 +2152,7 @@ void basic_sim(const Options& options)
 		std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
 			.count());
 
-	Sample<Geometry> sample(options.domain_w, options.domain_h);
+	Sample<Geometry> sample(options.domain_w, options.domain_h, options.domain_skew);
 	SampleInitializer<Geometry> init;
 	Observer<Geometry> obs;
 
@@ -2279,7 +2286,8 @@ void sim(int argc, char** argv)
 	else if (optstring.find('H') != std::string::npos)
 	{
 		options.domain_h = options.accumulator_interval;
-		basic_sim<DimerHexagonalGeometry<SkewBoundaryCondition>>(options);
+		options.domain_skew = options.domain_h;
+		basic_sim<DimerHexagonalGeometry<>>(options);
 	}
 	else
 	{
@@ -2319,10 +2327,10 @@ void test_optimizer()
 }
 
 template<typename Geometry>
-void test_pocket(int w, int h)
+void test_pocket(int w, int h, int skew)
 {
 	SampleInitializer<Geometry> init;
-	Sample<Geometry> sample(w, h);
+	Sample<Geometry> sample(w, h, skew);
 	std::minstd_rand rng;
 	init.basic_initialize(sample);
 
@@ -2356,11 +2364,11 @@ void test_pocket(int w, int h)
 }
 
 template<typename Geometry>
-void test_flips(int w, int h)
+void test_flips(int w, int h, int skew)
 {
 	std::string geomname = typeid(Geometry).name();
 
-	Sample<Geometry> sample(w, h);
+	Sample<Geometry> sample(w, h, skew);
 
 	for (int s = 0; s < Geometry::vertex_t::unit_cell_size(); s++)
 	{
@@ -2381,7 +2389,7 @@ void test_flips(int w, int h)
 		{
 			for (const auto& [flip_vtx, flip_bond] : sample.geom.get_flips(init_mono, b))
 			{
-				sample = Sample<Geometry>(w, h);
+				sample = Sample<Geometry>(w, h, skew);
 				auto sample_copy = sample;
 
 				for (const auto& vtx : sample.geom.get_vertices(bonds[b]))
@@ -2444,10 +2452,10 @@ void test_pocket3()
 }
 
 template<typename Geometry>
-void test_worm(int w, int h)
+void test_worm(int w, int h, int skew)
 {
 	SampleInitializer<Geometry> init;
-	Sample<Geometry> sample(w, h);
+	Sample<Geometry> sample(w, h, skew);
 	std::minstd_rand rng;
 	init.basic_initialize(sample);
 
@@ -2497,9 +2505,9 @@ void test_brickwall()
 }
 
 template<typename Geometry>
-void test_symmetry(int w, int h)
+void test_symmetry(int w, int h, int skew)
 {
-	Geometry geom(w, h);
+	Geometry geom(w, h, skew);
 	using bond_t = typename Geometry::bond_t;
 
 	for (int d = 0; d < geom.n_symmetries(); d++)
@@ -2515,12 +2523,13 @@ void test_symmetry(int w, int h)
 }
 
 template<typename Geometry>
-void test_all(int w, int h)
+void test_all(int w, int h, int skew)
 {
-	test_pocket<Geometry>(w, h);
-	test_flips<Geometry>(w, h);
-	test_worm<Geometry>(w, h);
-	test_symmetry<Geometry>(w, h);
+	test_symmetry<Geometry>(w, h, skew);
+	test_flips<Geometry>(w, h, skew);
+	test_pocket<Geometry>(w, h, skew);
+	test_worm<Geometry>(w, h, skew);
+	std::cout << "tests finished for " << typeid(Geometry).name() << std::endl;
 }
 
 #ifndef TEST
@@ -2528,12 +2537,13 @@ int main(int argc, char** argv) { sim(argc, argv); }
 #else
 int main()
 {
-	test_all<TrimerTriangularGeometry<>>(12, 12);
-	test_all<TrimerTriangularGeometry<SkewBoundaryCondition>>(54, 18);
-	test_all<DimerSquareGeometry<>>(12, 12);
-	test_all<DimerSquareGeometry<SkewBoundaryCondition>>(24, 24);
-	test_all<DimerHexagonalGeometry<>>(12, 12);
-	test_all<DimerHexagonalGeometry<SkewBoundaryCondition>>(24, 8);
+	test_all<TrimerTriangularGeometry<>>(12, 12, 0);
+	test_all<DimerHexagonalGeometry<>>(12, 12, 0);
+	test_all<DimerSquareGeometry<>>(12, 12, 0);
+
+	test_all<TrimerTriangularGeometry<>>(18, 6, 6);
+	test_all<DimerHexagonalGeometry<>>(18, 6, 6);
+	test_all<DimerSquareGeometry<>>(12, 6, 6);
 
 	test_pocket2();
 	test_pocket3();
