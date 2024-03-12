@@ -2496,39 +2496,19 @@ void test_brickwall()
 	}
 }
 
-void test_symmetry()
+template<typename Geometry>
+void test_symmetry(int w, int h)
 {
-	using Geom = TrimerTriangularGeometry<>;
+	Geometry geom(w, h);
+	using bond_t = typename Geometry::bond_t;
 
-	int w = 12;
-	Geom geom(w, w);
-
-	for (int d = 0; d < 17; d++)
+	for (int d = 0; d < geom.n_symmetries(); d++)
 	{
-		std::vector<bool> occupancies(w * w * 2);
+		std::vector<bool> occupancies(w * h * bond_t::unit_cell_size());
 		for (int i = 0; i < w; i++)
-			for (int j = 0; j < w; j++)
-				for (int s = 0; s < 2; s++)
-					occupancies[geom.apply_symmetry(Geom::bond_t(i, j, (int8_t) s), Geom::vertex_t(1, 2), d).index(w)] = true;
-
-		TEST_ASSERT(std::find(occupancies.begin(), occupancies.end(), false) == occupancies.end());
-	}
-}
-
-void test_symmetry_hexa()
-{
-	using Geom = DimerHexagonalGeometry<SkewBoundaryCondition>;
-
-	int w = 12;
-	Geom geom(w, w);
-	
-	for (int d = 0; d < 6; d++)
-	{
-		std::vector<bool> occupancies(w * w * 3);
-		for (int i = 0; i < w; i++)
-			for (int j = 0; j < w; j++)
-				for (int s = 0; s < 3; s++)
-					occupancies[geom.apply_symmetry(Geom::bond_t(i, j, (int8_t) s), LatticePos(1, 2), d).index(w)] = true;
+			for (int j = 0; j < h; j++)
+				for (int s = 0; s < bond_t::unit_cell_size(); s++)
+					occupancies[geom.apply_symmetry(bond_t(i, j, (int8_t) s), LatticePos(1, 2), d).index(w)] = true;
 
 		TEST_ASSERT(std::find(occupancies.begin(), occupancies.end(), false) == occupancies.end());
 	}
@@ -2540,6 +2520,7 @@ void test_all(int w, int h)
 	test_pocket<Geometry>(w, h);
 	test_flips<Geometry>(w, h);
 	test_worm<Geometry>(w, h);
+	test_symmetry<Geometry>(w, h);
 }
 
 #ifndef TEST
@@ -2558,8 +2539,6 @@ int main()
 	test_pocket3();
 
 	test_brickwall();
-	test_symmetry();
-	test_symmetry_hexa();
 	test_optimizer();
 }
 #endif
