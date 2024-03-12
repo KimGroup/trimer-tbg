@@ -20,14 +20,14 @@ def topo_sectors(pos, lines, w, h):
                     cpos = (cpos[0] + 1, cpos[1] + 1, 0)
             elif dir == 1:
                 if cpos[2] == 0:
+                    cpos = (cpos[0] - 1, cpos[1] + 1, 1)
+                else:
+                    cpos = (cpos[0], cpos[1] + 1, 0)
+            elif dir == 2:
+                if cpos[2] == 0:
                     cpos = (cpos[0] - 1, cpos[1], 1)
                 else:
                     cpos = (cpos[0] - 1, cpos[1] + 1, 0)
-            elif dir == 2:
-                if cpos[2] == 0:
-                    cpos = (cpos[0], cpos[1] - 1, 1)
-                else:
-                    cpos = (cpos[0] + 1, cpos[1] - 1, 0)
 
             cpos = (cpos[0] % w, cpos[1] % h, cpos[2])
 
@@ -37,14 +37,10 @@ def topo_sectors(pos, lines, w, h):
     return vals
 
 def winding_numbers(pos, w, h):
-    secs = topo_sectors(pos, [((0, 0, 0), 0), ((2, 0, 0), 1), ((1, 0, 0), 0), ((0, 0, 0), 1)], w, h)
+    secs = topo_sectors(pos, [((0, 0, 0), 0), ((1, 0, 0), 1), ((1, 0, 0), 0), ((2, 0, 0), 1)], w, h)
 
-    # i+j=A
-    # -2i+j=B
-    # i = (A-B)/3
-    # j = (2A+B)/3
-    ri, rj = (secs[0]-secs[1])//3, (2*secs[0]+secs[1])//3
-    gi, gj = (secs[2]-secs[3])//3, (2*secs[2]+secs[3])//3
+    ri, rj = (2*secs[0]+secs[1])//3, (secs[0]-secs[1])//3
+    gi, gj = (2*secs[2]+secs[3])//3, (secs[2]-secs[3])//3
     return ri, rj, gi, gj
 
 def conf_to_string(conf):

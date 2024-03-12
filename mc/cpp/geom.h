@@ -89,11 +89,69 @@ template<int8_t UnitCellSize> struct hash<SublatticePos<UnitCellSize>>
 };
 }
 
-struct TriangularGeometry
+struct PeriodicBoundaryCondition
 {
     int w, h;
-    TriangularGeometry(int w, int h) : w(w), h(h) { }
+    PeriodicBoundaryCondition(int w, int h) : w(w), h(h) { }
 
+    LatticePos principal(const LatticePos& pos) const { return LatticePos(pmod(pos.x, w), pmod(pos.y, h)); }
+	template<int8_t n>
+    SublatticePos<n> principal(const SublatticePos<n>& pos) const { return SublatticePos<n>(pmod(pos.x, w), pmod(pos.y, h), pos.s); }
+
+	LatticePos center(const LatticePos& pos, const LatticePos& center) const
+	{
+		return LatticePos(pmod(pos.x - center.x + w / 2, w) - w / 2, pmod(pos.y - center.y + h / 2, h) - h / 2);
+	}
+	template<int8_t n>
+	SublatticePos<n> center(const SublatticePos<n>& pos, const LatticePos& center) const
+	{
+		return SublatticePos<n>(pmod(pos.x - center.x + w / 2, w) - w / 2, pmod(pos.y - center.y + h / 2, h) - h / 2, pos.s);
+	}
+};
+
+struct SkewBoundaryCondition
+{
+    int w, h;
+    SkewBoundaryCondition(int w, int h) : w(w), h(h) { }
+
+    LatticePos principal(const LatticePos& pos) const
+	{
+		auto copy = pos;
+		while (copy.y >= h)
+		{
+			copy.x -= h;
+			copy.y -= h;
+		}
+		while (copy.y < 0)
+		{
+			copy.x += h;
+			copy.y += h;
+		}
+
+		copy.x = pmod(copy.x, w);
+		return copy;
+	}
+
+	template<int8_t n>
+    SublatticePos<n> principal(const SublatticePos<n>& pos) const
+    {
+        auto lat = principal(pos.lattice_pos());
+        return SublatticePos<n>(lat.x, lat.y, pos.s);
+    }
+
+	LatticePos center(const LatticePos& pos, const LatticePos& center) const
+	{
+		return pos - center;
+	}
+	template<int8_t n>
+	SublatticePos<n> center(const SublatticePos<n>& pos, const LatticePos& center) const
+	{
+		return pos - center;
+	}
+};
+
+struct TriangularGeometry
+{
 	LatticePos reflect(const LatticePos& pos, int dir) const
 	{
 		switch (dir)
@@ -135,24 +193,13 @@ struct TriangularGeometry
 	}
 };
 
-struct TrimerTriangularGeometry : public TriangularGeometry
+template<typename BoundaryCondition = PeriodicBoundaryCondition>
+struct TrimerTriangularGeometry : public TriangularGeometry, public BoundaryCondition
 {
     using vertex_t = LatticePos;
     using bond_t = SublatticePos<2>;
 
-    TrimerTriangularGeometry(int w, int h) : TriangularGeometry(w, h) { }
-
-    vertex_t principal(const vertex_t& pos) const { return vertex_t(pmod(pos.x, w), pmod(pos.y, h)); }
-	vertex_t center(const vertex_t& pos, const vertex_t& center) const
-	{
-		return LatticePos(pmod(pos.x - center.x + w / 2, w) - w / 2, pmod(pos.y - center.y + h / 2, h) - h / 2);
-	}
-
-    bond_t principal(const bond_t& pos) const { return bond_t(pmod(pos.x, w), pmod(pos.y, h), pos.s); }
-	bond_t center(const bond_t& pos, const vertex_t& center) const
-	{
-		return bond_t(pmod(pos.x - center.x + w / 2, w) - w / 2, pmod(pos.y - center.y + h / 2, h) - h / 2, pos.s);
-	}
+    TrimerTriangularGeometry(int w, int h) : BoundaryCondition(w, h) { }
 
     std::array<std::array<bond_t, 6>, 2> rotations = {
         std::array<bond_t, 6>{ bond_t{0, 0, 0}, {-1, 0, 1}, {-1, 0, 0}, {-1, -1, 1}, {0, -1, 0}, {0, -1, 1} },
@@ -182,7 +229,7 @@ struct TrimerTriangularGeometry : public TriangularGeometry
 
 	bond_t apply_symmetry(const bond_t& pos, const LatticePos& c, int index) const
 	{
-		auto p = center(pos, c);
+		auto p = this->center(pos, c);
 
 		if (index < 12)
 			p = reflect(p, index % 6);
@@ -198,7 +245,7 @@ struct TrimerTriangularGeometry : public TriangularGeometry
 			// -2pi/3 around sublattice A
 			p = bond_t(p.y, -p.x-p.y-p.s, p.s);
 
-		return principal(p + c);
+		return this->principal(p + c);
 	}
 
 	std::array<vertex_t, 3> get_vertices(const bond_t& pos) const
@@ -218,9 +265,9 @@ struct TrimerTriangularGeometry : public TriangularGeometry
 			r[2] = {pos.x, pos.y + 1};
 		}
 
-		r[0] = principal(r[0]);
-		r[1] = principal(r[1]);
-		r[2] = principal(r[2]);
+		r[0] = this->principal(r[0]);
+		r[1] = this->principal(r[1]);
+		r[2] = this->principal(r[2]);
 
 		return r;
 	}
@@ -234,7 +281,7 @@ struct TrimerTriangularGeometry : public TriangularGeometry
 		std::array<bond_t, 6> r;
 
 		for (int i = 0; i < 6; i++)
-			r[i] = principal(vertex_trimers[i] + pos);
+			r[i] = this->principal(vertex_trimers[i] + pos);
 
 		return r;
 	}
@@ -260,7 +307,7 @@ struct TrimerTriangularGeometry : public TriangularGeometry
 	auto get_flips(const vertex_t& vtx, int bond_index)
 	{
 		std::array<std::pair<vertex_t, bond_t>, 1> ret;
-		ret[0] = std::make_pair(principal(vertex_flips[bond_index][0] + vtx), principal(bond_flips[bond_index][0] + vtx));
+		ret[0] = std::make_pair(this->principal(vertex_flips[bond_index][0] + vtx), this->principal(bond_flips[bond_index][0] + vtx));
 
 		return ret;
 	}
@@ -273,41 +320,13 @@ struct TrimerTriangularGeometry : public TriangularGeometry
     };
 };
 
-struct DimerHexagonalSkewGeometry : public TriangularGeometry
+template<typename BoundaryCondition = PeriodicBoundaryCondition>
+struct DimerHexagonalGeometry : public TriangularGeometry, public BoundaryCondition
 {
     using vertex_t = SublatticePos<2>;
     using bond_t = SublatticePos<3>;
 
-    DimerHexagonalSkewGeometry(int w, int h) : TriangularGeometry(w, h) { }
-
-    LatticePos principal(LatticePos pos) const
-	{
-		while (pos.y >= h)
-		{
-			pos.x -= h;
-			pos.y -= h;
-		}
-		while (pos.y < 0)
-		{
-			pos.x += h;
-			pos.y += h;
-		}
-
-		pos.x = pmod(pos.x, w);
-		return pos;
-	}
-
-    vertex_t principal(const vertex_t& pos) const
-    {
-        auto lat = principal(pos.lattice_pos());
-        return vertex_t(lat.x, lat.y, pos.s);
-    }
-
-    bond_t principal(const bond_t& pos) const
-    {
-        auto lat = principal(pos.lattice_pos());
-        return bond_t(lat.x, lat.y, pos.s);
-    }
+    DimerHexagonalGeometry(int w, int h) : BoundaryCondition(w, h) { }
 
 	std::array<vertex_t, 2> get_vertices(const bond_t& pos) const
 	{
@@ -321,23 +340,23 @@ struct DimerHexagonalSkewGeometry : public TriangularGeometry
 		else
 			r[1] = {pos.x, pos.y - 1, 1};
 
-		r[0] = principal(r[0]);
-		r[1] = principal(r[1]);
+		r[0] = this->principal(r[0]);
+		r[1] = this->principal(r[1]);
 
 		return r;
 	}
 
 	std::array<std::array<bond_t, 3>, 2> vertex_dimers = {
 		std::array<bond_t, 3>{ bond_t{0, 0, 0}, {0, 0, 1}, {0, 0, 2} },
-		std::array<bond_t, 3>{ bond_t{0, 0, 0}, {0, 1, 2}, {1, 0, 1} },
+		std::array<bond_t, 3>{ bond_t{0, 1, 2}, {0, 0, 0}, {1, 0, 1} },
 	};
 
-	std::array<bond_t, 3> get_bonds(vertex_t pos) const
+	std::array<bond_t, 3> get_bonds(const vertex_t& pos) const
 	{
 		std::array<bond_t, 3> r;
 
 		for (int i = 0; i < 3; i++)
-			r[i] = principal(vertex_dimers[pos.s][i] + pos.lattice_pos());
+			r[i] = this->principal(vertex_dimers[pos.s][i] + pos.lattice_pos());
 
 		return r;
 	}
@@ -362,7 +381,7 @@ struct DimerHexagonalSkewGeometry : public TriangularGeometry
 
         p = reflect(p, index);
 
-		return principal(p + c);
+		return this->principal(p + c);
 	}
 
 	std::array<std::array<std::array<vertex_t, 2>, 3>, 2> vertex_flips = {
@@ -396,9 +415,9 @@ struct DimerHexagonalSkewGeometry : public TriangularGeometry
 		std::array<std::pair<vertex_t, bond_t>, 2> ret;
 
 		for (int i = 0; i < 2; i++)
-			ret[0] = std::make_pair(
-				principal(vertex_flips[vtx.s][bond_index][i] + vtx.lattice_pos()),
-				principal(bond_flips[vtx.s][bond_index][i] + vtx.lattice_pos())
+			ret[i] = std::make_pair(
+				this->principal(vertex_flips[vtx.s][bond_index][i] + vtx.lattice_pos()),
+				this->principal(bond_flips[vtx.s][bond_index][i] + vtx.lattice_pos())
 			);
 
 		return ret;
@@ -407,17 +426,20 @@ struct DimerHexagonalSkewGeometry : public TriangularGeometry
 	static constexpr bool has_j4() { return false; }
 };
 
-struct DimerSquareGeometry
+template<typename BoundaryCondition = PeriodicBoundaryCondition>
+struct DimerSquareGeometry : public BoundaryCondition
 {
     using vertex_t = LatticePos;
     using bond_t = SublatticePos<2>;
 
-    int w, h;
-
-    DimerSquareGeometry(int w, int h) : w(w), h(h) { }
-
-    vertex_t principal(const vertex_t& pos) const { return vertex_t(pmod(pos.x, w), pmod(pos.y, h)); }
-    bond_t principal(const bond_t& pos) const { return bond_t(pmod(pos.x, w), pmod(pos.y, h), pos.s); }
+    DimerSquareGeometry(int w, int h) : BoundaryCondition(w, h)
+	{
+		if (w != h)
+		{
+			std::cout << "square geometry doesn't work with different sized lattices";
+			throw 0;
+		}
+	}
 
 	LatticePos reflect(const LatticePos& pos, int dir) const
 	{
@@ -453,7 +475,7 @@ struct DimerSquareGeometry
 
         p = reflect(p, index);
 
-		return principal(p + c);
+		return this->principal(p + c);
 	}
 
 	std::array<vertex_t, 2> get_vertices(const bond_t& pos) const
@@ -466,8 +488,8 @@ struct DimerSquareGeometry
 		else
 			r[1] = {pos.x, pos.y + 1};
 
-		r[0] = principal(r[0]);
-		r[1] = principal(r[1]);
+		r[0] = this->principal(r[0]);
+		r[1] = this->principal(r[1]);
 
 		return r;
 	}
@@ -481,14 +503,14 @@ struct DimerSquareGeometry
 		std::array<bond_t, 4> r;
 
 		for (int i = 0; i < 4; i++)
-			r[i] = principal(vertex_dimers[i] + pos);
+			r[i] = this->principal(vertex_dimers[i] + pos);
 
 		return r;
 	}
 
 	std::array<std::array<vertex_t, 3>, 4> vertex_flips = {
 		std::array<vertex_t, 3>{ vertex_t{1, 1}, {2, 0}, {1, -1} },
-		std::array<vertex_t, 3>{ vertex_t{-1, 1}, {0, 2}, {1, 2} },
+		std::array<vertex_t, 3>{ vertex_t{-1, 1}, {0, 2}, {1, 1} },
 		std::array<vertex_t, 3>{ vertex_t{-1, -1}, {-2, 0}, {-1, 1} },
 		std::array<vertex_t, 3>{ vertex_t{1, -1}, {0, -2}, {-1, -1} },
 	};
@@ -505,7 +527,7 @@ struct DimerSquareGeometry
 		std::array<std::pair<vertex_t, bond_t>, 3> ret;
 
 		for (int i = 0; i < 3; i++)
-			ret[0] = std::make_pair(principal(vertex_flips[bond_index][i] + vtx), principal(bond_flips[bond_index][i] + vtx));
+			ret[i] = std::make_pair(this->principal(vertex_flips[bond_index][i] + vtx), this->principal(bond_flips[bond_index][i] + vtx));
 
 		return ret;
 	}

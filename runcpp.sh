@@ -3,50 +3,62 @@
 #SBATCH --mem-per-cpu=1G
 #SBATCH --time=2-0
 #SBATCH --cpus-per-task=1
-#SBATCH --ntasks=24
+#SBATCH --ntasks=18
 
-# srun --exclusive -n 1 ./pocket 48 0 0 0 50000000 20 tw 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 24 0 0 0 50000000 10 t 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 36 0 0 0 50000000 10 t 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 48 0 0 0 50000000 10 t 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 60 0 0 0 50000000 10 t 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 72 0 0 0 50000000 10 t 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 84 0 0 0 50000000 10 t 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 96 0 0 0 50000000 10 t 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 108 0 0 0 100000000 10 t 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 120 0 0 0 100000000 10 t 30000 t0j0-ergodic &
 
-srun --exclusive -n 1 ./pocket 12 0 0 1 200000000 50000 I 0 temp &
-srun --exclusive -n 1 ./pocket 12 0 0 1 200000000 50000 I 10 temp &
-srun --exclusive -n 1 ./pocket 12 0 0 1 200000000 50000 I 20 temp &
-srun --exclusive -n 1 ./pocket 12 0 0 1 200000000 50000 I 40 temp &
-srun --exclusive -n 1 ./pocket 12 0 0 1 200000000 50000 I 60 temp &
-srun --exclusive -n 1 ./pocket 12 0 0 1 200000000 50000 I 70 temp &
-srun --exclusive -n 1 ./pocket 12 0 0 1 200000000 50000 I 80 temp &
-srun --exclusive -n 1 ./pocket 12 0 0 1 200000000 50000 I 100 temp &
+srun --exclusive -n 1 ./pocket 24 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 36 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 48 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 60 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 72 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 84 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 96 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 108 1 0 0 100000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 120 1 0 0 100000000 10 tm 30000 t0j0-ergodic &
+
+srun --exclusive -n 1 ./pocket 24 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 36 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 48 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 60 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 72 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 84 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 96 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 108 2 0 0 100000000 10 tm 30000 t0j0-ergodic &
+srun --exclusive -n 1 ./pocket 120 2 0 0 100000000 10 tm 30000 t0j0-ergodic &
+
+# srun --exclusive -n 1 ./pocket 24 0 0 0 2000000 1 H 24 dimers-hex/24x24 &
+# srun --exclusive -n 1 ./pocket 48 0 0 0 2000000 1 H 48 dimers-hex/48x48 &
+# srun --exclusive -n 1 ./pocket 72 0 0 0 2000000 1 H 72 dimers-hex/72x72 &
+# srun --exclusive -n 1 ./pocket 96 0 0 0 2000000 1 H 96 dimers-hex/96x96 &
 
 # srun --exclusive -n 1 ./pocket 6 0 0 0 20000000 1 D 1 dimers/6x6 &
 # srun --exclusive -n 1 ./pocket 12 0 0 0 20000000 1 D 1 dimers/12x12 &
 # srun --exclusive -n 1 ./pocket 24 0 0 0 20000000 1 D 1 dimers/24x24 &
 # srun --exclusive -n 1 ./pocket 36 0 0 0 20000000 1 D 1 dimers/36x36 &
+# srun --exclusive -n 1 ./pocket 48 0 0 0 20000000 1 D 1 dimers/48x48 &
 # srun --exclusive -n 1 ./pocket 60 0 0 0 20000000 1 D 1 dimers/60x60 &
 # srun --exclusive -n 1 ./pocket 72 0 0 0 20000000 1 D 1 dimers/72x72 &
 # srun --exclusive -n 1 ./pocket 84 0 0 0 20000000 1 D 1 dimers/84x84 &
 # srun --exclusive -n 1 ./pocket 108 0 0 0 20000000 1 D 1 dimers/108x108 &
 # srun --exclusive -n 1 ./pocket 120 0 0 0 20000000 1 D 1 dimers/120x120 &
 
-# srun --exclusive -n 1 ./pocket 12 0 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 12 1 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 12 2 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 24 0 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 24 1 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 24 2 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 36 0 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 36 1 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 36 2 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 48 0 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 48 1 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 48 2 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 60 0 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 60 1 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 60 2 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 72 0 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 72 1 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 72 2 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 84 0 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 84 1 0 1 50000000 20 hwRI 10000 measure-k/0 &
-# srun --exclusive -n 1 ./pocket 84 2 0 1 50000000 20 hwRI 10000 measure-k/0 &
+# srun --exclusive -n 1 ./pocket 12 0 0 1 50000000 20 hwI 10000 measure-k/0 &
+# srun --exclusive -n 1 ./pocket 24 0 0 1 50000000 20 hwI 10000 measure-k/0 &
+# srun --exclusive -n 1 ./pocket 36 0 0 1 50000000 20 hwI 10000 measure-k/0 &
+# srun --exclusive -n 1 ./pocket 48 0 0 1 50000000 20 hwI 10000 measure-k/0 &
+# srun --exclusive -n 1 ./pocket 60 0 0 1 50000000 20 hwI 10000 measure-k/0 &
+# srun --exclusive -n 1 ./pocket 72 0 0 1 50000000 20 hwI 10000 measure-k/0 &
+# srun --exclusive -n 1 ./pocket 84 0 0 1 50000000 20 hwI 10000 measure-k/0 &
+# srun --exclusive -n 1 ./pocket 96 0 0 1 50000000 20 hwI 10000 measure-k/0 &
 
 # srun --exclusive -n 1 ./pocket 72 1 -0.01 0.03 20000000 20 emtc 10000 finite-t/j-0.01 &
 # srun --exclusive -n 1 ./pocket 72 1 -0.01 0.05 20000000 20 emtc 10000 finite-t/j-0.01 &
