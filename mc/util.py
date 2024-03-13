@@ -546,7 +546,6 @@ def read_accumulator_raw(fname):
                 state = "count"
     return np.array(val), np.array(std), np.array(n)
 
-
 def enum_files(dir):
     import glob
     for fname in glob.glob(dir):
@@ -554,7 +553,10 @@ def enum_files(dir):
         tokens = basename.split("_")
         l = int(tokens[0].split("x")[0])
         r = int(tokens[1][1:])
-        yield { "fname": fname, "l": l, "r": r, "n": (l**2-r)//3, "t": float(tokens[2][1:]), "j4": float(tokens[3][1:]) }
+        if "_u" in basename:
+            yield { "fname": fname, "l": l, "r": r, "n": (l**2-r)//3, "t": float(tokens[2][1:]), "u": float(tokens[3][1:]), "j4": float(tokens[4][1:]) }
+        else:
+            yield { "fname": fname, "l": l, "r": r, "n": (l**2-r)//3, "t": float(tokens[2][1:]), "j4": float(tokens[3][1:]) }
 
 def get_all_data(glob, transform, filter=lambda _: True, skip=0, by="t", with_counts=False, take=None):
     ts0, ds0, ns = [], [], []

@@ -59,7 +59,7 @@ template <> struct hash<tuple<int, int, int, int>>
 		return seed;
 	}
 };
-} // namespace std
+}
 
 struct Options
 {
@@ -106,7 +106,7 @@ struct Options
 
 	std::string directory;
 
-	double pocket_fraction = 0.75;
+	double pocket_fraction = 0.9;
 };
 
 template<typename Geometry>
@@ -125,6 +125,7 @@ struct Sample
 
 private:
 	std::vector<bond_t> _pocket, _Abar;
+
 	std::unordered_map<bond_t, InteractionCount> _candidates;
 
 public:
@@ -1023,10 +1024,12 @@ struct Observer<TrimerTriangularGeometry<>>
 	int calculate_winding_number(const sample_t& sample, const bond_t& start, int dir) const
 	{
 		bond_t cpos = start;
-		int tot = -(sample.w + sample.h) / 6;
+		int tot = 0;
+		int nbond = 0;
 
 		while (true)
 		{
+			nbond++;
 			if (sample.cfg.bond_occ[cpos.index(sample.w)])
 				tot++;
 
@@ -1057,7 +1060,7 @@ struct Observer<TrimerTriangularGeometry<>>
 			if (cpos == start)
 				break;
 		}
-		return tot;
+		return tot - nbond / 6;
 	}
 
 	std::tuple<int, int, int, int> calculate_topo_sector(const sample_t& sample) const
@@ -1069,36 +1072,15 @@ struct Observer<TrimerTriangularGeometry<>>
 
 		int wga = calculate_winding_number(sample, bond_t(offset + 1, 0, 0), 0);
 		int wgb = -calculate_winding_number(sample, bond_t(offset + 2, 0, 0), 1);
-
-		int ri = (2*wra - wrb) / 3, rj = (wra + wrb) / 3;
-		int gi = (2*wga - wgb) / 3, gj = (wga + wgb) / 3;
 #ifdef TEST
 		int wba = calculate_winding_number(sample, bond_t(offset + 2, 0, 0), 0);
 		int wbb = -calculate_winding_number(sample, bond_t(offset + 3, 0, 0), 1);
 
-		int wrc = calculate_winding_number(sample, bond_t(offset + 2, 0, 0), 2);
-		int wgc = calculate_winding_number(sample, bond_t(offset + 3, 0, 0), 2);
-		int wbc = calculate_winding_number(sample, bond_t(offset + 4, 0, 0), 2);
-
-		int bi = (2*wba - wbb) / 3, bj = (wba + wbb) / 3;
-
-		ASSERT(bi == -ri - gi);
-		ASSERT(bj == -rj - gj);
-
-		ASSERT(wra == ri + rj);
-		ASSERT(wga == gi + gj);
-		ASSERT(wba == bi + bj);
-
-		ASSERT(wrb == -ri + 2*rj);
-		ASSERT(wgb == -gi + 2*gj);
-		ASSERT(wbb == -bi + 2*bj);
-
-		ASSERT(wrc == -2*ri + rj);
-		ASSERT(wgc == -2*gi + gj);
-		ASSERT(wbc == -2*bi + bj);
+		ASSERT(wba == -wra - wga);
+		ASSERT(wbb == -wrb - wgb);
 #endif
 
-		return std::make_tuple(ri, rj, gi, gj);
+		return std::make_tuple(wra, wrb, wga, wgb);
 	}
 };
 
@@ -1146,7 +1128,6 @@ struct Observer<DimerHexagonalGeometry<BoundaryCondition>>
 		int wa = calculate_winding_number(sample, 0);
 		int wb = -calculate_winding_number(sample, 1);
 
-		// int ri = (wa - wb) / 3, rj = (2 * wa + wb) / 3;
 		return std::make_pair(wa, wb);
 	}
 };
@@ -1330,9 +1311,6 @@ struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
 
 	template<typename Rng> void reconfigure_root3(sample_t& sample, Rng& rng, int vacancies = 0)
 	{
-		if (sample.w % 3 || sample.h % 3)
-			throw "";
-
 		std::fill(sample.cfg.bond_occ.begin(), sample.cfg.bond_occ.end(), false);
 		std::fill(sample.cfg.vertex_occ.begin(), sample.cfg.vertex_occ.end(), 0);
 
@@ -1340,15 +1318,15 @@ struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
 
 		int n = 0;
 		for (int i = 0; i < sample.w; i += 3)
-			for (int j = 0; j < sample.h; j += 3)
-				for (int s = 0; s < 3; s++)
-					if (n++ >= vacancies)
-					{
-						auto pos = bond_t(i + offset / 2 + s, j + s, (int8_t) (offset % 2));
-						sample.cfg.bond_occ[sample.geom.principal(pos).index(sample.w)] = true;
-						for (const auto& vtx : sample.geom.get_vertices(pos))
-							sample.cfg.vertex_occ[vtx.index(sample.w)]++;
-					}
+			for (int j = 0; j < sample.h; j++)
+				if (n++ >= vacancies)
+				{
+					auto pos = bond_t(i + j + offset / 2, j, (int8_t) (offset % 2));
+
+					sample.cfg.bond_occ[sample.geom.principal(pos).index(sample.w)] = true;
+					for (const auto& vtx : sample.geom.get_vertices(pos))
+						sample.cfg.vertex_occ[vtx.index(sample.w)]++;
+				}
 
 		sample.cfg.j4_total = 0;
 		sample.cfg.clusters_total = 0;
@@ -1488,15 +1466,17 @@ struct PTWorker
 				if (options.u == 1)
 				{
 					ss << options.domain_w << "x" << options.domain_h << "_r-" << options.mono_vacancies
-					   << "_t" << std::fixed << std::setprecision(6) << temperature << "_j" << std::setprecision(3)
-					   << options.j4 << "_" << options.total_steps << "." << options.decorr_interval << "_" << runid++;
+					   << "_t" << std::fixed << std::setprecision(6) << temperature
+					   << "_j" << std::setprecision(3) << options.j4
+					   << "_" << options.total_steps << "." << options.decorr_interval << "_" << runid++;
 				}
 				else
 				{
 					ss << options.domain_w << "x" << options.domain_h << "_r-" << options.mono_vacancies
-					   << "_t" << std::fixed << std::setprecision(6) << temperature << "_u" << std::setprecision(3)
-					   << options.u << "_j" << std::setprecision(3) << options.j4 << "_" << options.total_steps << "."
-					   << options.decorr_interval << "_" << runid++;
+					   << "_t" << std::fixed << std::setprecision(6) << temperature
+					   << "_u" << std::setprecision(3) << options.u
+					   <<"_j" << std::setprecision(3) << options.j4
+					   << "_" << options.total_steps << "." << options.decorr_interval << "_" << runid++;
 				}
 
 				basepath = std::filesystem::path("new-data") / options.directory / ss.str();
@@ -2285,7 +2265,7 @@ void sim(int argc, char** argv)
 	}
 	else if (optstring.find('H') != std::string::npos)
 	{
-		options.domain_h = options.accumulator_interval;
+		options.domain_h = options.domain_w / 3;
 		options.domain_skew = options.domain_h;
 		basic_sim<DimerHexagonalGeometry<>>(options);
 	}
@@ -2544,6 +2524,18 @@ int main()
 	test_all<TrimerTriangularGeometry<>>(18, 6, 6);
 	test_all<DimerHexagonalGeometry<>>(18, 6, 6);
 	test_all<DimerSquareGeometry<>>(12, 6, 6);
+
+	test_flips<TrimerTriangularGeometry<>>(18, 6, 0);
+	test_flips<TrimerTriangularGeometry<>>(36, 12, 0);
+	test_flips<TrimerTriangularGeometry<>>(48, 16, 0);
+	test_flips<DimerHexagonalGeometry<>>(18, 6, 0);
+	test_flips<DimerSquareGeometry<>>(12, 6, 0);
+
+	test_worm<TrimerTriangularGeometry<>>(18, 6, 0);
+	test_worm<TrimerTriangularGeometry<>>(36, 12, 0);
+	test_worm<TrimerTriangularGeometry<>>(54, 18, 0);
+	test_worm<DimerHexagonalGeometry<>>(18, 6, 0);
+	test_worm<DimerSquareGeometry<>>(12, 6, 0);
 
 	test_pocket2();
 	test_pocket3();
