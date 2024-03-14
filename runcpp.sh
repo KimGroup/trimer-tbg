@@ -5,35 +5,90 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --ntasks=18
 
-# srun --exclusive -n 1 ./pocket 24 0 0 0 50000000 10 t 30000 t0j0-ergodic &
-# srun --exclusive -n 1 ./pocket 36 0 0 0 50000000 10 t 30000 t0j0-ergodic &
-# srun --exclusive -n 1 ./pocket 48 0 0 0 50000000 10 t 30000 t0j0-ergodic &
-# srun --exclusive -n 1 ./pocket 60 0 0 0 50000000 10 t 30000 t0j0-ergodic &
-# srun --exclusive -n 1 ./pocket 72 0 0 0 50000000 10 t 30000 t0j0-ergodic &
-# srun --exclusive -n 1 ./pocket 84 0 0 0 50000000 10 t 30000 t0j0-ergodic &
-# srun --exclusive -n 1 ./pocket 96 0 0 0 50000000 10 t 30000 t0j0-ergodic &
-# srun --exclusive -n 1 ./pocket 108 0 0 0 100000000 10 t 30000 t0j0-ergodic &
-# srun --exclusive -n 1 ./pocket 120 0 0 0 100000000 10 t 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 72 1 1 1 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 2 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 3 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 4 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 5 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 6 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 7 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 8 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 9 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 10 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 15 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 20 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 25 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 30 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 35 50000000 10 htmRI 20000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 40 50000000 10 htmRI 20000 infinite-u/1 &
 
-srun --exclusive -n 1 ./pocket 24 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 36 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 48 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 60 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 72 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 84 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 96 1 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 108 1 0 0 100000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 120 1 0 0 100000000 10 tm 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 72 1 -1 1 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 2 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 3 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 4 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 5 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 6 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 7 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 8 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 9 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 10 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 15 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 20 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 25 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 30 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 35 50000000 10 htmRI 20000 infinite-u/-1 &
+# srun --exclusive -n 1 ./pocket 72 1 -1 40 50000000 10 htmRI 20000 infinite-u/-1 &
 
-srun --exclusive -n 1 ./pocket 24 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 36 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 48 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 60 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 72 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 84 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 96 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 108 2 0 0 100000000 10 tm 30000 t0j0-ergodic &
-srun --exclusive -n 1 ./pocket 120 2 0 0 100000000 10 tm 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 24 1 1 15 50000000 20 htmRI 30000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 36 1 1 15 50000000 20 htmRI 30000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 48 1 1 15 50000000 20 htmRI 30000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 60 1 1 15 50000000 20 htmRI 30000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 72 1 1 15 50000000 20 htmRI 30000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 84 1 1 15 50000000 20 htmRI 30000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 96 1 1 15 50000000 20 htmRI 30000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 108 1 1 15 100000000 20 htmRI 30000 infinite-u/1 &
+# srun --exclusive -n 1 ./pocket 120 1 1 15 100000000 20 htmRI 30000 infinite-u/1 &
+
+srun --exclusive -n 1 ./pocket 24 1 -1 5 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 36 1 -1 5 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 48 1 -1 5 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 60 1 -1 5 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 72 1 -1 5 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 84 1 -1 5 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 96 1 -1 5 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 108 1 -1 5 100000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 120 1 -1 5 100000000 20 htmRI 30000 infinite-u/-1 &
+
+srun --exclusive -n 1 ./pocket 24 1 -1 3 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 36 1 -1 3 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 48 1 -1 3 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 60 1 -1 3 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 72 1 -1 3 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 84 1 -1 3 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 96 1 -1 3 50000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 108 1 -1 3 100000000 20 htmRI 30000 infinite-u/-1 &
+srun --exclusive -n 1 ./pocket 120 1 -1 3 100000000 20 htmRI 30000 infinite-u/-1 &
+
+
+# srun --exclusive -n 1 ./pocket 24 1 0 0 50000000 10 htmRI 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 36 1 0 0 50000000 10 htmRI 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 48 1 0 0 50000000 10 htmRI 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 60 1 0 0 50000000 10 htmRI 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 72 1 0 0 50000000 10 htmRI 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 84 1 0 0 50000000 10 htmRI 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 96 1 0 0 50000000 10 htmRI 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 108 1 0 0 100000000 10 htmRI 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 120 1 0 0 100000000 10 htmRI 30000 t0j0-ergodic &
+
+# srun --exclusive -n 1 ./pocket 24 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 36 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 48 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 60 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 72 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 84 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 96 2 0 0 50000000 10 tm 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 108 2 0 0 100000000 10 tm 30000 t0j0-ergodic &
+# srun --exclusive -n 1 ./pocket 120 2 0 0 100000000 10 tm 30000 t0j0-ergodic &
 
 # srun --exclusive -n 1 ./pocket 24 0 0 0 2000000 1 H 24 dimers-hex/24x24 &
 # srun --exclusive -n 1 ./pocket 48 0 0 0 2000000 1 H 48 dimers-hex/48x48 &

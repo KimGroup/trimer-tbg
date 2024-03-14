@@ -96,6 +96,8 @@ struct PeriodicBoundaryCondition
 
     LatticePos principal(const LatticePos& pos) const
 	{
+		if (skew == 0) return LatticePos(pmod(pos.x, w), pmod(pos.y, h));
+
 		auto ymod = pmod(pos.y, h);
 		auto div = (pos.y - ymod) / h;
 		return LatticePos(pmod(pos.x - skew * div, w), ymod);
@@ -104,6 +106,8 @@ struct PeriodicBoundaryCondition
 	template<int8_t n>
     SublatticePos<n> principal(const SublatticePos<n>& pos) const
 	{
+		if (skew == 0) return SublatticePos<n>(pmod(pos.x, w), pmod(pos.y, h), pos.s);
+
 		auto ymod = pmod(pos.y, h);
 		auto div = (pos.y - ymod) / h;
 		return SublatticePos<n>(pmod(pos.x - skew * div, w), ymod, pos.s);

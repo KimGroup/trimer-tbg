@@ -118,15 +118,17 @@ struct Sample
 
 	struct InteractionCount
 	{
-		int u = 0;
-		int j4 = 0;
-		int hard_core = 0;
+		int16_t u = 0;
+		int16_t j4 = 0;
+		bool hard_core = false;
+		bool added = false;
 	};
 
 private:
 	std::vector<bond_t> _pocket, _Abar;
 
-	std::unordered_map<bond_t, InteractionCount> _candidates;
+	std::vector<InteractionCount> _candidates_map;
+	std::vector<int> _candidates_list;
 
 public:
 	int w, h, skew;
@@ -151,6 +153,7 @@ public:
 	{
 		cfg.bond_occ = std::vector<bool>(w * h * bond_t::unit_cell_size(), false);
 		cfg.vertex_occ = std::vector<uint8_t>(w * h * vertex_t::unit_cell_size(), 0);
+		_candidates_map = std::vector<InteractionCount>(w * h * bond_t::unit_cell_size());
 		cfg.j4_total = 0;
 		cfg.clusters_total = 0;
 	}
@@ -222,13 +225,24 @@ public:
 					change_j4_bonds(bond_t(x, y, 0), 1);
 	}
 
+	void add_pocket_candidate(int posid, int nu, int nj4, bool hard_core)
+	{
+		auto& mapel = _candidates_map[posid];
+
+		if (!mapel.added)
+			_candidates_list.push_back(posid);
+
+		mapel.added = true;
+		mapel.hard_core |= hard_core;
+		mapel.u = (int16_t) (mapel.u + nu);
+		mapel.j4 = (int16_t) (mapel.j4 + nj4);
+	}
+
 	void set_pocket_candidates(const bond_t& el, const bond_t& moved, double u, double j4)
 	{
-		_candidates.clear();
-
 		// hard-core constraint
 		if (cfg.bond_occ[moved.index(w)])
-			_candidates[moved].hard_core++;
+			add_pocket_candidate(moved.index(w), 0, 0, 1);
 
 		// add target overlaps to candidates
 		if (u != 0)
@@ -236,7 +250,7 @@ public:
 				if (cfg.vertex_occ[i.index(w)] > 0)
 					for (const auto& trimer_pos : geom.get_bonds(i))
 						if (cfg.bond_occ[trimer_pos.index(w)])
-							_candidates[trimer_pos].u++;
+							add_pocket_candidate(trimer_pos.index(w), 1, 0, 0);
 
 		// add source overlaps to candidates
 		if (u != 0 && u < infinity)
@@ -244,7 +258,7 @@ public:
 				if (cfg.vertex_occ[i.index(w)] > 0)
 					for (const auto& trimer_pos : geom.get_bonds(i))
 						if (cfg.bond_occ[trimer_pos.index(w)])
-							_candidates[trimer_pos].u--;
+							add_pocket_candidate(trimer_pos.index(w), -1, 0, 0);
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
@@ -257,14 +271,14 @@ public:
 				{
 					auto pos = geom.principal(d + el.lattice_pos());
 					if (cfg.bond_occ[pos.index(w)])
-						_candidates[pos].j4--;
+						add_pocket_candidate(pos.index(w), 0, -1, 0);
 				}
 
 				for (const auto& d : geom.j4_neighbor_list[moved.s])
 				{
 					auto pos = geom.principal(d + moved.lattice_pos());
 					if (cfg.bond_occ[pos.index(w)])
-						_candidates[pos].j4++;
+						add_pocket_candidate(pos.index(w), 0, 1, 0);
 				}
 			}
 		}
@@ -272,8 +286,6 @@ public:
 
 	template<typename Rng> int pocket_move(Rng& rng, double u, double j4)
 	{
-		calculate_energy();
-
 		if (!geom.are_symmetries_correct())
 		{
 			std::cout << "cannot use pocket with current lattice; use only worms instead" << std::endl;
@@ -325,10 +337,15 @@ public:
 
 			set_pocket_candidates(el, moved, u, j4);
 
-			for (const auto& [pos, interactions] : _candidates)
+			for (int posid : _candidates_list)
 			{
+				const auto& interactions = _candidates_map[posid];
+
 				double u_factor = interactions.u != 0 ? u * interactions.u : 0;
 				double j4_factor = interactions.j4 != 0 ? j4 * interactions.j4 : 0;
+				
+				if (u_factor == infinity || u_factor == -infinity)
+					j4_factor = 0;
 
 				double p_cascade = 1 - std::exp(-(u_factor + j4_factor));
 
@@ -337,6 +354,8 @@ public:
 
 				if (p_cascade > 0 && (p_cascade >= 1 || uniform(rng) < p_cascade))
 				{
+					auto pos = bond_t::from_index(posid, w);
+
 					_pocket.push_back(pos);
 					cfg.bond_occ[pos.index(w)] = false;
 					for (const auto& vtx : geom.get_vertices(pos))
@@ -345,7 +364,10 @@ public:
 						cfg.vertex_occ[vtx.index(w)]--;
 					}
 				}
+
+				_candidates_map[posid] = InteractionCount();
 			}
+			_candidates_list.clear();
 		}
 
 		for (const auto& i : _Abar)
@@ -1509,8 +1531,8 @@ struct PTWorker
 	{
 		auto begin = std::chrono::high_resolution_clock::now();
 
-		double j4 = temperature == 0 ? 0 : options.j4 / temperature;
-		double u = temperature == 0 ? infinity : options.u / temperature;
+		double j4 = temperature == 0 && options.u < infinity ? 0 : options.j4 / temperature;
+		double u = options.u / temperature;
 
 		std::uniform_real_distribution<> uniform(0., 1.);
 		for (int i = 0; i < options.decorr_interval; i++)
@@ -1545,6 +1567,7 @@ struct PTWorker
 					sample.calculate_energy();
 
 					double d_energy = (sample.cfg.j4_total - copy.j4_total) * j4;
+
 					if (uniform(rng) <= 1 - std::exp(-d_energy))
 						std::swap(copy, sample.cfg);
 				}
@@ -2390,7 +2413,7 @@ void test_flips(int w, int h, int skew)
 void test_pocket2()
 {
 	SampleInitializer<TrimerTriangularGeometry<>> init;
-	Sample<TrimerTriangularGeometry<>> sample(12, 12);
+	Sample<TrimerTriangularGeometry<>> sample(24, 24);
 	std::minstd_rand rng;
 	init.reconfigure_root3(sample, rng);
 
@@ -2412,7 +2435,7 @@ void test_pocket2()
 void test_pocket3()
 {
 	SampleInitializer<TrimerTriangularGeometry<>> init;
-	Sample<TrimerTriangularGeometry<>> sample(12, 12);
+	Sample<TrimerTriangularGeometry<>> sample(24, 24);
 	std::minstd_rand rng;
 	init.reconfigure_brick_wall(sample, rng);
 
