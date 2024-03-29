@@ -95,9 +95,9 @@ struct Options
 	int total_steps = 0;
 	int decorr_interval = 1;
 	int accumulator_interval = 0;
-	int swap_interval = 10;
+	int swap_interval = 25;
 	int adaptation_interval = 500;
-	int adaptation_duration = 500000;
+	int adaptation_duration = 800000;
 
 	double j4 = 0;
 	double u = infinity;
@@ -768,7 +768,7 @@ struct Observer<TrimerTriangularGeometry<>>
 		{
 			auto dimer = dimers[i];
 			for (auto j : isolated_monos)
-				vals[sample.geom.principal(sample.geom.rotate(j - dimer.first, -dimer.second)).index(sample.w)]++;
+				vals[sample.geom.principal(sample.geom.rotate(j - dimer.first, pmod(-dimer.second, 6))).index(sample.w)]++;
 		}
 
 		a.record(vals);
@@ -838,13 +838,8 @@ struct Observer<TrimerTriangularGeometry<>>
 				for (uint j = 0; j < sample.cfg.bond_occ.size(); j++)
 					if (sample.cfg.bond_occ[j])
 					{
-						if (j == i)
-							continue;
-
 						auto p1 = bond_t::from_index(i, sample.w);
 						auto p2 = bond_t::from_index(j, sample.w);
-						if (j > i)
-							std::swap(p1, p2);
 
 						auto d = p1.s == 0 ? bond_t(p2.x - p1.x, p2.y - p1.y, p2.s)
 										   : bond_t(p1.x - p2.x, p1.y - p2.y, (int8_t) (1 - p2.s));
@@ -859,9 +854,8 @@ struct Observer<TrimerTriangularGeometry<>>
 			double inv_seen = 1. / seen;
 			for (auto& n : vals)
 				n *= inv_seen;
+			a.record(vals);
 		}
-
-		a.record(vals);
 	}
 
 	struct Observables
@@ -970,20 +964,18 @@ struct Observer<TrimerTriangularGeometry<>>
 		{
 			for (uint j = 0; j < pos.size(); j++)
 			{
-				if (j == i)
-					continue;
-
 				auto d = pos[i] - pos[j];
-				vals[sample.geom.principal(d).index(sample.w)] += 0.5;
-				vals[sample.geom.principal(-d).index(sample.w)] += 0.5;
+				vals[sample.geom.principal(d).index(sample.w)]++;
 			}
 		}
 
-		double inv_count = 1. / sample_count;
-		for (auto& x : vals)
-			x *= inv_count;
-
-		a.record(vals);
+		if (sample_count > 0)
+		{
+			double inv_count = 1. / sample_count;
+			for (auto& x : vals)
+				x *= inv_count;
+			a.record(vals);
+		}
 	}
 
 	void record_monomer_correlations(const sample_t& sample, Accumulator<double>& a) const
@@ -1151,6 +1143,76 @@ struct Observer<DimerHexagonalGeometry<BoundaryCondition>>
 		int wb = -calculate_winding_number(sample, 1);
 
 		return std::make_pair(wa, wb);
+	}
+
+	template<typename Rng>
+	void record_partial_dimer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng, double fraction) const
+	{
+		std::vector<double> vals(sample.w * sample.h * 9);
+		std::uniform_real_distribution<> uniform(0., 1.);
+
+		int seen = 0;
+		for (uint i = 0; i < sample.cfg.bond_occ.size(); i++)
+		{
+			if (sample.cfg.bond_occ[i] && uniform(rng) <= fraction)
+			{
+				seen++;
+				for (uint j = 0; j < sample.cfg.bond_occ.size(); j++)
+					if (sample.cfg.bond_occ[j])
+					{
+						auto p1 = bond_t::from_index(i, sample.w);
+						auto p2 = bond_t::from_index(j, sample.w);
+
+						// auto d = SublatticePos<9>(p2.x - p1.x + sample.w, p2.y - p1.y + sample.h, (int8_t) (p1.s * 3 + p2.s));
+						// vals[d.index(sample.w*2)]++;
+
+						auto d = SublatticePos<9>(p2.x - p1.x + sample.w, p2.y - p1.y + sample.h, (int8_t) (p1.s * 3 + p2.s));
+						vals[sample.geom.principal(d).index(sample.w)]++;
+					}
+			}
+		}
+
+		if (seen > 0)
+		{
+			double inv_seen = 1. / seen;
+			for (auto& n : vals)
+				n *= inv_seen;
+			a.record(vals);
+		}
+	}
+
+	template <typename Rng>
+	void record_partial_monomer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng, int max_count) const
+	{
+		std::vector<double> vals(sample.w * sample.h * 2);
+		std::vector<vertex_t> pos;
+
+		for (uint i = 0; i < sample.cfg.vertex_occ.size(); i++)
+			if (sample.cfg.vertex_occ[i] == 0)
+				pos.push_back(vertex_t::from_index(i, sample.w));
+
+		std::shuffle(pos.begin(), pos.end(), rng);
+		uint sample_count = (uint)std::min(pos.size(), (size_t)max_count);
+
+		for (uint i = 0; i < sample_count; i++)
+		{
+			for (uint j = 0; j < pos.size(); j++)
+			{
+				auto d = pos[i].s == 0 ? vertex_t(pos[j].x - pos[i].x, pos[j].y - pos[i].y, pos[j].s)
+				                       : vertex_t(pos[i].x - pos[j].x, pos[i].y - pos[j].y, (int8_t) (1 - pos[j].s));
+
+				vals[sample.geom.principal(d).index(sample.w)]++;
+			}
+		}
+
+		if (sample_count > 0)
+		{
+			double inv_count = 1. / sample_count;
+			for (auto& x : vals)
+				x *= inv_count;
+
+			a.record(vals);
+		}
 	}
 };
 
@@ -1361,12 +1423,14 @@ struct SampleInitializer<DimerSquareGeometry<BoundaryCondition>>
 	using sample_t = Sample<DimerSquareGeometry<BoundaryCondition>>;
 	using bond_t = typename sample_t::bond_t;
 
-	void basic_initialize(sample_t& sample)
+	int nv = 0;
+	void basic_initialize(sample_t& sample, int vacancies)
 	{
 		std::vector<bond_t> positions;
 		for (int i = 0; i < sample.w; i += 2)
 			for (int j = 0; j < sample.h; j += 1)
-				positions.push_back(bond_t(i, j, 0));
+				if (++nv > vacancies)
+					positions.push_back(bond_t(i, j, 0));
 
 		sample = sample_t(sample.w, sample.h, sample.skew, positions);
 	}
@@ -1378,12 +1442,14 @@ struct SampleInitializer<DimerHexagonalGeometry<BoundaryCondition>>
 	using sample_t = Sample<DimerHexagonalGeometry<BoundaryCondition>>;
 	using bond_t = typename sample_t::bond_t;
 
-	void basic_initialize(sample_t& sample)
+	void basic_initialize(sample_t& sample, int vacancies=0)
 	{
 		std::vector<bond_t> positions;
+		int nv = 0;
 		for (int i = 0; i < sample.w; i += 1)
 			for (int j = 0; j < sample.h; j += 1)
-				positions.push_back(bond_t(i, j, 0));
+				if (++nv > vacancies)
+					positions.push_back(bond_t(i, j, 2));
 
 		sample = sample_t(sample.w, sample.h, sample.skew, positions);
 	}
@@ -1604,13 +1670,13 @@ struct PTWorker
 			double energy = 0;
 
 			if (options.out_monomono)
-				obs.record_partial_monomer_correlations(sample, amonomono, rng, 32);
+				obs.record_partial_monomer_correlations(sample, amonomono, rng, 10);
 			if (options.out_clustercount)
 				obs.record_cluster_count(sample, aclustercount);
 			if (options.out_monodi)
 				obs.record_dimer_monomer_correlations(sample, amonodi, rng, 10);
 			if (options.out_tritri)
-				obs.record_partial_trimer_correlations(sample, atritri, rng, 20. / (sample.w * sample.h / 3));
+				obs.record_partial_trimer_correlations(sample, atritri, rng, 10. / (sample.w * sample.h / 3));
 			if (options.out_energy)
 				energy = obs.record_energy(sample, aenergy, options.u, options.j4);
 			if (options.out_order)
@@ -1750,6 +1816,9 @@ struct PTEnsemble
 			chains[i + 1].sample.calculate_energy();
 
 			double u_factor = (chains[i].sample.cfg.clusters_total - chains[i + 1].sample.cfg.clusters_total) * options.u;
+			if (options.u == infinity)
+				u_factor = 0;
+
 			double j4_factor = (chains[i].sample.cfg.j4_total - chains[i + 1].sample.cfg.j4_total) * options.j4;
 
 			double action;
@@ -2159,12 +2228,17 @@ void basic_sim(const Options& options)
 	SampleInitializer<Geometry> init;
 	Observer<Geometry> obs;
 
-	init.basic_initialize(sample);
+	init.basic_initialize(sample, options.mono_vacancies / 3);
 
 	auto path = std::filesystem::path("new-data") / options.directory;
 	std::filesystem::create_directories(path);
 	std::ofstream ofhist(path / "winding-histogram.dat", std::ios::binary);
 	std::ofstream ofconf(path / "positions.dat");
+	std::ofstream ofcorr(path / "dimer-dimer.dat");
+	std::ofstream ofmono(path / "mono-mono.dat");
+
+	Accumulator<double> acorr(options.domain_w * options.domain_h * 9, options.accumulator_interval);
+	Accumulator<double> amono(options.domain_w * options.domain_h * 2, options.accumulator_interval);
 
 	std::uniform_real_distribution<> uniform(0., 1.);
 
@@ -2186,6 +2260,16 @@ void basic_sim(const Options& options)
 		write_binary<int16_t>(ofhist, (int16_t) windings.first);
 		write_binary<int16_t>(ofhist, (int16_t) windings.second);
 		ofhist.flush();
+
+		if constexpr (std::is_same_v<Geometry, DimerHexagonalGeometry<>>)
+		{
+			obs.record_partial_dimer_correlations(sample, acorr, rng, 10. / (sample.w * sample.h / 3));
+			obs.record_partial_monomer_correlations(sample, amono, rng, 4);
+			acorr.write(ofcorr);
+			amono.write(ofmono);
+			ofcorr.flush();
+			ofmono.flush();
+		}
 
 		if (nstep >= prev_conf + options.position_interval)
 		{
@@ -2288,8 +2372,8 @@ void sim(int argc, char** argv)
 	}
 	else if (optstring.find('H') != std::string::npos)
 	{
-		options.domain_h = options.domain_w / 3;
-		options.domain_skew = options.domain_h;
+		// options.domain_h = options.domain_w / 3;
+		// options.domain_skew = options.domain_h;
 		basic_sim<DimerHexagonalGeometry<>>(options);
 	}
 	else

@@ -109,6 +109,7 @@ for b in np.linspace(0.001, 1.999, 50):
     s.append(S)
 
 print(np.log(np.sum(np.exp(np.array(s)))/2))
+print(s)
 
 p, s = np.array(p), np.array(s)
 

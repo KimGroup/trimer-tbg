@@ -332,6 +332,19 @@ struct DimerHexagonalGeometry : public TriangularGeometry, public BoundaryCondit
 		return r;
 	}
 
+    std::array<std::array<bond_t, 6>, 3> rotations = {
+        std::array<bond_t, 6>{ bond_t{0, 0, 0}, {-1, 1, 2}, {-1, 0, 1}, {-1, -1, 0}, {0, -1, 2}, {1, -1, 1} },
+        std::array<bond_t, 6>{ bond_t{0, 0, 1}, {-1, 0, 0}, {-1, 0, 2}, {0, -1, 1}, {0, -1, 0}, {0, 0, 2} },
+        std::array<bond_t, 6>{ bond_t{0, 0, 2}, {0, 0, 1}, {-1, 0, 0}, {-1, 0, 2}, {0, -1, 1}, {0, -1, 0} },
+    };
+
+    using TriangularGeometry::rotate;
+	// rotate around the plaquette at (0, 0)
+	bond_t rotate(const bond_t& pos, int amount) const
+	{
+        return rotations[pos.s][amount] + rotate(pos.lattice_pos(), amount);
+	}
+
 	std::array<std::array<bond_t, 6>, 3> reflections = {
 		std::array<bond_t, 6>{ bond_t{1, -1, 1}, {0, 0, 0}, {-1, 1, 2}, {-1, 0, 1}, {-1, -1, 0}, {0, -1, 2} },
 		std::array<bond_t, 6>{ bond_t{0, -1, 0}, {0, 0, 2}, {0, 0, 1}, {-1, 0, 0}, {-1, 0, 2}, {0, -1, 1} },

@@ -129,6 +129,17 @@ def trimer_coords(x, y, s):
 def mono_coords(x, y):
     return (x + y/2, y * np.sqrt(3)/2)
 
+def dimer_hex_coords(x, y, s):
+    xy = mono_coords(x, y)
+    angle = np.pi/6 + 2*np.pi/3*s
+    d = np.sqrt(3)/6
+
+    xy = (xy[0]+d*np.cos(angle), xy[1]+d*np.sin(angle))
+    s, c = np.sin(np.pi/6), np.cos(np.pi/6)
+
+    xy = (np.sqrt(3)*(xy[0]*c + xy[1]*s), np.sqrt(3)*(xy[1]*c - xy[0]*s))
+    return xy
+
 def draw_hexalattice(ax, width, height, color=None, ls="-"):
     if color is None:
         color = "black"
@@ -191,6 +202,49 @@ def flip_monomer(mono_pos, dir, w, h):
         x, y = x+2, y-1
 
     return x%w, y%h
+
+def flip_trimer(mono_pos, dir, w, h):
+    x, y = mono_pos
+    if dir == 0:
+        x, y, s = x, y, 1
+    elif dir == 1:
+        x, y, s = x-1, y+1, 0
+    elif dir == 2:
+        x, y, s = x-2, y, 1
+    elif dir == 3:
+        x, y, s = x-1, y-1, 0
+    elif dir == 4:
+        x, y, s = x, y-2, 1
+    elif dir == 5:
+        x, y, s = x+1, y-1, 0
+
+    return x%w, y%h, s
+
+def flip_line(positions, start, w, h, lim=99999):
+    newpos = set(positions)
+    cpos = start
+    prev_trimer = None
+    flipped = set()
+    for j in range(lim):
+        index = None
+        trimerpos = None
+        for i, pos in enumerate(enum_plaquette(cpos, w, h)):
+            if (pos in newpos or pos in flipped) and prev_trimer != pos:
+                index = i
+                trimerpos = pos
+                break
+        else:
+            break
+        
+        if pos in newpos:
+            newpos.remove(trimerpos)
+        else:
+            flipped.remove(trimerpos)
+
+        flipped.add(flip_trimer(cpos, index, w, h))
+        prev_trimer = flip_trimer(cpos, index, w, h)
+        cpos = flip_monomer(cpos, index, w, h)
+    return list(newpos), list(flipped)
 
 def show_worms(ax, positions, w, h):
     import collections
@@ -341,7 +395,7 @@ def show_worms(ax, positions, w, h):
     print(" ".join(str(("RGB"[loop["color"]], loop["wx"], loop["wy"])) for loop in loops))
 
 
-def show_positions(ax, positions, type="worm", show_monomers=False, color="black", length=None):
+def show_positions(ax, positions, type="worm", show_monomers=False, color="black", height=None, width=None):
     def to_rgba(hex, alpha):
         return ((hex >> 16) / 256, ((hex >> 8) & 0xFF) / 256, (hex & 0xFF) / 256, alpha)
 
@@ -353,12 +407,11 @@ def show_positions(ax, positions, type="worm", show_monomers=False, color="black
     color6 = 0x4db2f1
     colors = [color1, color2, color3, color4, color5, color6]
 
-    if length is None:
+    if width is None:
         width = max(x for x, y, s in positions)+1
+
+    if height is None:
         height = max(y for x, y, s in positions)+1
-    else:
-        width = length
-        height = length
 
     draw_hexalattice(ax, width, height)
     positions = set(positions)
@@ -456,6 +509,27 @@ def show_positions_dimer(ax, positions):
     ax.set_xlim([10, 50])
     ax.set_ylim([10, 30])
     ax.set_aspect("equal")
+
+def autoshape(data, r=None):
+    l = len(data)
+    if r != None:
+        root = int(round(np.sqrt(l / r)))
+        if r == 1:
+            return data.reshape((root, root)).transpose((1, 0))
+        else:
+            return data.reshape((root, root, r)).transpose((1, 0, 2))
+    else:
+        for r in range(1, 4):
+            if l % r != 0:
+                continue
+
+            root = int(round(np.sqrt(l / r)))
+            if root * root == l // r:
+                if r == 1:
+                    return data.reshape((root, root)).transpose((1, 0))
+                else:
+                    return data.reshape((root, root, r)).transpose((1, 0, 2))
+    return None
 
 def show_positions_dimer_hex(ax, positions):
     positions = set(positions)
@@ -728,27 +802,77 @@ def plot2d_hex(ax, data, title=None):
     plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
     plt.title(title)
 
-def FT_hex(vals):
+def plot2d_hexdimer(ax, data, title=None, skew=False):
+    ax.axis("off")
+    ax.set_xlim([-25, 25])
+    ax.set_ylim([-15, 15])
+    ax.set_aspect("equal")
+
+    patches = []
+    colors = []
+    N = matplotlib.colors.Normalize(vmin=np.min(data), vmax=np.max(data))
+
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            for k in range(3):
+                colors.append(matplotlib.colormaps["viridis"](N(data[i, j, k])))
+                i2, j2 = i, j
+                
+                if j2 >= data.shape[1]//2:
+                    j2 -= data.shape[1]
+                    if skew:
+                        i2 -= data.shape[1]
+                if i2 >= data.shape[0]//2:
+                    i2 -= data.shape[0]
+
+                xy = mono_coords(i2, j2)
+
+                patches.append(matplotlib.patches.Rectangle(xy, np.sqrt(3)/3, 0.4, angle=30+k*120, rotation_point=(xy[0], xy[1] + 0.2)))
+
+    ax.add_collection(matplotlib.collections.PatchCollection(patches, facecolors=colors))
+    plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
+    plt.title(title)
+
+def FT(vals, coords=trimer_coords, double=False, matrix=False):
     newvals = []
     newx = []
     newy = []
 
-    radius = vals.shape[0]/4.5
+    radius = vals.shape[0]/4
+    if matrix:
+        sqrts = int(round(np.sqrt(vals.shape[2])))
 
     def add(x, y, s):
-        xy = trimer_coords(x, y, s)
+        s0 = 0
+        s1 = s
+        if matrix:
+            s0 = s // sqrts
+            s1 = s % sqrts
 
+        x0 = coords(0, 0, s0)
+        if double:
+            xy = coords(x-vals.shape[0]//2, y-vals.shape[1]//2, s1)
+        else:
+            xy = coords(x, y, s1)
 
-        if (xy[0]**2 + xy[1]**2 < (radius*3)**2):
+        xy = xy[0]-x0[0], xy[1]-x0[1]
+
+        if (xy[0]**2 + xy[1]**2 < (radius*4)**2):
             newx.append(xy[0])
             newy.append(xy[1])
             newvals.append(vals[x%vals.shape[0], y%vals.shape[1], s] * np.exp(-(xy[0]**2+xy[1]**2)/(2*radius**2)))
 
-    bounding = int(vals.shape[0]*2)
-    for i in range(bounding):
-        for j in range(bounding):
-            add(i-bounding//2, j-bounding//2, 0)
-            add(i-bounding//2, j-bounding//2, 1)
+    if double:
+        for i in range(vals.shape[0]):
+            for j in range(vals.shape[1]):
+                for s in range(vals.shape[2]):
+                    add(i, j, s)
+    else:
+        bounding = int(vals.shape[0]*2.5)
+        for i in range(bounding):
+            for j in range(bounding):
+                for s in range(vals.shape[2]):
+                    add(i-bounding//2, j-bounding//2, s)
 
     newx = np.array(newx)
     newy = np.array(newy)
@@ -758,19 +882,18 @@ def FT_hex(vals):
         return np.sum(np.exp(-1j * (newx * k[0] * np.pi + newy * k[1] * np.pi)) * newvals)
     return corr
 
-coords = None
-extent = 2.5
-def make_coords():
+coords = {}
+def make_coords(extent):
     global coords
-    if coords is not None:
+    if extent in coords:
         return
 
-    X = np.linspace(-extent, extent, 400)
-    Y = np.linspace(-extent, extent, 400)
+    X = np.linspace(extent[0], extent[1], 400)
+    Y = np.linspace(extent[2], extent[3], 400)
 
-    coords = np.zeros((len(X), len(Y), 2))
-    for x in range(coords.shape[0]):
-        for y in range(coords.shape[1]):
+    coords[extent] = np.zeros((len(X), len(Y), 2))
+    for x in range(coords[extent].shape[0]):
+        for y in range(coords[extent].shape[1]):
             xy = np.array([X[x], Y[y]])
 
             # fold into fundamental domain
@@ -786,26 +909,29 @@ def make_coords():
                 else:
                     break
 
-            coords[x, y] = [xy[0], xy[1]]
+            coords[extent][x, y] = [xy[0], xy[1]]
 
-def plot_FT(ax, ft, proj="re", fold=True):
-    make_coords()
+def plot_FT(ax, ft, proj="re", fold=True, vmax=None, res=75, extent=2.5):
+    if not isinstance(extent, tuple):
+        extent = (-extent, extent, -extent, extent)
+
+    make_coords(extent)
 
     if fold:
-        datares = 75
-        dataX = np.linspace(-0.02, 2.02, datares * 2)
-        dataY = np.linspace(-0.02, 2.02/np.sqrt(3), datares)
+        datares = res
+        dataX = np.linspace(-0.02, extent[1]*1.01, datares * 2)
+        dataY = np.linspace(-0.02, extent[1]*1.01/np.sqrt(3), datares)
         data = np.zeros((datares * 2, datares), dtype=complex)
         for x in range(datares * 2):
             for y in range(min(datares, x//2 + 3)):
                 data[x, y] = ft((dataX[x], dataY[y]))
         import scipy
         interp = scipy.interpolate.RegularGridInterpolator((dataX, dataY), data)
-        interped = interp(coords)
+        interped = interp(coords[extent])
     else:
-        datares = 50
-        dataX = np.linspace(-extent, extent, datares*2)
-        dataY = np.linspace(-extent, extent, datares*2)
+        datares = res
+        dataX = np.linspace(extent[0], extent[1], datares*2)
+        dataY = np.linspace(extent[2], extent[3], datares*2)
         data = np.zeros((datares*2, datares*2), dtype=complex)
         for x in range(datares*2):
             for y in range(datares*2):
@@ -817,29 +943,40 @@ def plot_FT(ax, ft, proj="re", fold=True):
         abs = np.amax(np.abs(mapped))
         norm = matplotlib.colors.Normalize(vmin=-abs, vmax=abs)
         cmap = "RdBu"
-    elif proj == "im":
-        mapped = np.imag(interped)
-        abs = np.amax(np.abs(mapped))
-        norm = matplotlib.colors.Normalize(vmin=-abs, vmax=abs)
-        cmap = "RdBu"
     elif proj == "abs":
         mapped = np.abs(interped)
-        norm = matplotlib.colors.Normalize(vmin=np.amin(mapped), vmax=np.amax(mapped))
+        if vmax is None:
+            vmax = np.amax(mapped)
+        norm = matplotlib.colors.Normalize(vmin=0, vmax=vmax)
+        cmap = "viridis"
+    elif proj == "absre":
+        mapped = np.abs(np.real(interped))
+        if vmax is None:
+            vmax = np.amax(mapped)
+        norm = matplotlib.colors.Normalize(vmin=0, vmax=vmax)
         cmap = "viridis"
     elif proj == "logabs":
         mapped = np.abs(interped) + 0.0001
-        norm = matplotlib.colors.LogNorm(vmin=np.amin(mapped), vmax=np.amax(mapped))
+        if vmax is None:
+            vmax = np.amax(mapped)
+        norm = matplotlib.colors.LogNorm(vmin=np.amin(mapped), vmax=vmax)
         cmap = "viridis"
     elif proj == "logre":
         mapped = np.abs(np.real(interped)) + 0.0001
-        norm = matplotlib.colors.LogNorm(vmin=np.amin(mapped), vmax=np.amax(mapped))
+        if vmax is None:
+            vmax = np.amax(mapped)
+        norm = matplotlib.colors.LogNorm(vmin=np.amin(mapped), vmax=vmax)
         cmap = "viridis"
 
 
-    ax.imshow(mapped.T, origin="lower", extent=(-extent, extent, -extent, extent), cmap=cmap, norm=norm)
-    ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="k", alpha=0.2, lw=0.5))
-    ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="k", orientation=np.pi/6, alpha=0.2, lw=0.5))
+    ax.imshow(mapped.T, origin="lower", extent=extent, cmap=cmap, norm=norm)
+    ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="w", alpha=0.5, lw=1))
+    ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="w", orientation=np.pi/6, alpha=0.5, lw=1))
     ax.grid(False)
+    ax.text(0, 0.1, "$\\Gamma$", color="w", horizontalalignment="center", size=13).set_clip_on(True)
+    ax.text(4/3, 0.1, "$K$", color="w", size=13).set_clip_on(True)
+    ax.text(-4/3, 0.1, "$K'$", horizontalalignment="right", color="w", size=13).set_clip_on(True)
+    ax.text(0, 1.25, "$M$", horizontalalignment="center", color="w", size=13).set_clip_on(True)
     plt.colorbar(matplotlib.cm.ScalarMappable(norm, cmap=cmap), ax=ax)
 
 def plot_timeseries(ax, data, std, label=None):
