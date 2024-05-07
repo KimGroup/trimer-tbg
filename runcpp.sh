@@ -3,7 +3,27 @@
 #SBATCH --mem-per-cpu=1G
 #SBATCH --time=2-0
 #SBATCH --cpus-per-task=1
-#SBATCH --ntasks=16
+#SBATCH --ntasks=2
+
+# srun --exclusive -n 1 ./pocket 48 48 0.01 0.01 20000000 20 tOR 10000 openbc/0.01o &
+# srun --exclusive -n 1 ./pocket 48 1 0.01 0.01 20000000 20 tR 10000 openbc/0.01p &
+# srun --exclusive -n 1 ./pocket 48 48 0.01 0.01 20000000 20 tR 10000 openbc/0.01p &
+# srun --exclusive -n 1 ./pocket 48 1 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
+# srun --exclusive -n 1 ./pocket 48 48 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
+# srun --exclusive -n 1 ./pocket 48 96 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
+# srun --exclusive -n 1 ./pocket 48 144 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
+srun --exclusive -n 1 ./pocket 48 192 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
+srun --exclusive -n 1 ./pocket 48 240 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
+
+# srun --exclusive -n 1 ./pocket 24 0 2 0.5 50000000 20 htR 30000 slp &
+# srun --exclusive -n 1 ./pocket 36 0 2 0.5 50000000 20 htR 30000 slp &
+# srun --exclusive -n 1 ./pocket 48 0 2 0.5 50000000 20 htR 30000 slp &
+# srun --exclusive -n 1 ./pocket 60 0 2 0.5 50000000 20 htR 30000 slp &
+# srun --exclusive -n 1 ./pocket 72 0 2 0.5 50000000 20 htR 30000 slp &
+# srun --exclusive -n 1 ./pocket 84 0 2 0.5 50000000 20 htR 30000 slp &
+# srun --exclusive -n 1 ./pocket 96 0 2 0.5 50000000 20 htR 30000 slp &
+# srun --exclusive -n 1 ./pocket 108 0 2 0.5 50000000 20 htR 30000 slp &
+# srun --exclusive -n 1 ./pocket 120 0 2 0.5 50000000 20 htR 30000 slp &
 
 # srun --exclusive -n 1 ./pocket 48 1 0 0.04 100000000 20 emtc 40000 finite-t-ergodic/0.04 &
 # srun --exclusive -n 1 ./pocket 72 1 0 0.04 100000000 20 emtc 40000 finite-t-ergodic/0.04 &

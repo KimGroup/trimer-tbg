@@ -63,5 +63,6 @@
         "**/data/**": true,
         "**/new-data/**": true,
         "**/*.dat": true
-      }
+    },
+    "editor.formatOnSave": true
 }

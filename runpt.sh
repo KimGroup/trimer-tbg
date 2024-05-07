@@ -71,6 +71,7 @@
 # srun --exclusive -n 1 -c 16 ./pocket 108 0 0.4 0.295:16:0.32 40000000 5 chAR 15000 vsweeps/binder-tri/0.4/ &
 # srun --exclusive -n 1 -c 16 ./pocket 120 0 0.4 0.295:16:0.32 40000000 5 chAR 15000 vsweeps/binder-tri/0.4/ &
 
+srun --exclusive -n 1 -c 16 ./pocket 24 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
 srun --exclusive -n 1 -c 16 ./pocket 36 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
 srun --exclusive -n 1 -c 16 ./pocket 48 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
 srun --exclusive -n 1 -c 16 ./pocket 60 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &

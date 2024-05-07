@@ -1,7 +1,7 @@
 import numpy as np
 import numexpr as ne
 import scipy
-from util import *
+from mc.util import *
 
 def next_pow_two(n):
     i = 1

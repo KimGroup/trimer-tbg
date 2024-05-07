@@ -34,14 +34,13 @@ void assert_fail() { std::exit(0); }
 #define TEST_ASSERT2(x, y)                                                                                             \
 	if (!(x))                                                                                                          \
 	{                                                                                                                  \
-		std::cout << "test failed at " << __LINE__ << " " << #x << "; " << y << std::endl;                           \
+		std::cout << "test failed at " << __LINE__ << " " << #x << "; " << y << std::endl;                             \
 		assert_fail();                                                                                                 \
 	}
 #else
 #define TEST_ASSERT(x) (x);
 #define TEST_ASSERT2(x, y) (x);
 #endif
-
 
 const double infinity = std::numeric_limits<double>::infinity();
 using complex = std::complex<double>;
@@ -59,12 +58,13 @@ template <> struct hash<tuple<int, int, int, int>>
 		return seed;
 	}
 };
-}
+} // namespace std
 
 struct Options
 {
 	int domain_w;
 	int domain_h;
+	int domain_open_bc = false;
 	int domain_skew = 0;
 
 	int mono_vacancies = 0;
@@ -109,8 +109,7 @@ struct Options
 	double pocket_fraction = 0.9;
 };
 
-template<typename Geometry>
-struct Sample
+template <typename Geometry> struct Sample
 {
 	using geom_t = Geometry;
 	using vertex_t = Geometry::vertex_t;
@@ -124,14 +123,16 @@ struct Sample
 		bool added = false;
 	};
 
-private:
+  private:
 	std::vector<bond_t> _pocket, _Abar;
 
 	std::vector<InteractionCount> _candidates_map;
 	std::vector<int> _candidates_list;
 
-public:
-	int w, h, skew;
+  public:
+	int w, h;
+	int vertex_w, vertex_h;
+	int skew;
 	Geometry geom;
 
 	struct Configuration
@@ -143,16 +144,29 @@ public:
 
 	Configuration cfg;
 
-	Sample() : w(0), h(0), skew(0), geom(0, 0)
+	Sample() : w(0), h(0), vertex_w(0), vertex_h(0), skew(0), geom(0, 0)
 	{
 		cfg.j4_total = 0;
 		cfg.clusters_total = 0;
 	}
 
-	Sample(int w, int h, int skew=0) : w(w), h(h), skew(skew), geom(w, h, skew)
+	Sample(int w, int h, int skew = 0, bool open_bc = false) : w(w), h(h), skew(skew), geom(w, h, skew)
 	{
 		cfg.bond_occ = std::vector<bool>(w * h * bond_t::unit_cell_size(), false);
-		cfg.vertex_occ = std::vector<uint8_t>(w * h * vertex_t::unit_cell_size(), 0);
+
+		if (open_bc)
+		{
+			cfg.vertex_occ = std::vector<uint8_t>((w + 1) * (h + 1) * vertex_t::unit_cell_size(), 0);
+			vertex_w = w + 1;
+			vertex_h = h + 1;
+		}
+		else
+		{
+			cfg.vertex_occ = std::vector<uint8_t>(w * h * vertex_t::unit_cell_size(), 0);
+			vertex_w = w;
+			vertex_h = h;
+		}
+
 		_candidates_map = std::vector<InteractionCount>(w * h * bond_t::unit_cell_size());
 		cfg.j4_total = 0;
 		cfg.clusters_total = 0;
@@ -179,7 +193,7 @@ public:
 			{
 				auto tri = bond_t::from_index(i, w);
 				for (const auto& vtx : geom.get_vertices(tri))
-					cfg.vertex_occ[vtx.index(w)]++;
+					cfg.vertex_occ[vtx.index(vertex_w)]++;
 			}
 	}
 
@@ -188,11 +202,14 @@ public:
 	void change_j4_bonds(const bond_t& removed, int amount)
 	{
 #pragma GCC diagnostic pop
-		if constexpr(geom_t::has_j4())
+		if constexpr (geom_t::has_j4())
 		{
 			for (const auto& rel : geom.j4_neighbor_list[removed.s])
-				if (cfg.bond_occ[geom.principal(rel + removed.lattice_pos()).index(w)])
+			{
+				const auto newpos = geom.principal(rel + removed.lattice_pos());
+				if (newpos.x >= 0 && newpos.y >= 0 && newpos.x < w && newpos.y < h && cfg.bond_occ[newpos.index(w)])
 					cfg.j4_total += amount;
+			}
 		}
 	}
 
@@ -211,7 +228,7 @@ public:
 
 		for (auto i : cfg.bond_occ)
 			if (i)
-				total_occ -= (int) std::tuple_size<decltype(geom.get_vertices(bond_t()))>::value;
+				total_occ -= (int)std::tuple_size<decltype(geom.get_vertices(bond_t()))>::value;
 
 		ASSERT(total_occ == 0);
 #endif
@@ -234,8 +251,8 @@ public:
 
 		mapel.added = true;
 		mapel.hard_core |= hard_core;
-		mapel.u = (int16_t) (mapel.u + nu);
-		mapel.j4 = (int16_t) (mapel.j4 + nj4);
+		mapel.u = (int16_t)(mapel.u + nu);
+		mapel.j4 = (int16_t)(mapel.j4 + nj4);
 	}
 
 	void set_pocket_candidates(const bond_t& el, const bond_t& moved, double u, double j4)
@@ -247,22 +264,24 @@ public:
 		// add target overlaps to candidates
 		if (u != 0)
 			for (const auto& i : geom.get_vertices(moved))
-				if (cfg.vertex_occ[i.index(w)] > 0)
+				if (cfg.vertex_occ[i.index(vertex_w)] > 0)
 					for (const auto& trimer_pos : geom.get_bonds(i))
-						if (cfg.bond_occ[trimer_pos.index(w)])
+						if (trimer_pos.x >= 0 && trimer_pos.y >= 0 && trimer_pos.x < w && trimer_pos.y < h &&
+							cfg.bond_occ[trimer_pos.index(w)])
 							add_pocket_candidate(trimer_pos.index(w), 1, 0, 0);
 
 		// add source overlaps to candidates
 		if (u != 0 && u < infinity)
 			for (const auto& i : geom.get_vertices(el))
-				if (cfg.vertex_occ[i.index(w)] > 0)
+				if (cfg.vertex_occ[i.index(vertex_w)] > 0)
 					for (const auto& trimer_pos : geom.get_bonds(i))
-						if (cfg.bond_occ[trimer_pos.index(w)])
+						if (trimer_pos.x >= 0 && trimer_pos.y >= 0 && trimer_pos.x < w && trimer_pos.y < h &&
+							cfg.bond_occ[trimer_pos.index(w)])
 							add_pocket_candidate(trimer_pos.index(w), -1, 0, 0);
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
-		if constexpr(geom_t::has_j4())
+		if constexpr (geom_t::has_j4())
 #pragma GCC diagnostic pop
 		{
 			if (j4 != 0)
@@ -270,21 +289,21 @@ public:
 				for (const auto& d : geom.j4_neighbor_list[el.s])
 				{
 					auto pos = geom.principal(d + el.lattice_pos());
-					if (cfg.bond_occ[pos.index(w)])
+					if (pos.x >= 0 && pos.y >= 0 && pos.x < w && pos.y < h && cfg.bond_occ[pos.index(w)])
 						add_pocket_candidate(pos.index(w), 0, -1, 0);
 				}
 
 				for (const auto& d : geom.j4_neighbor_list[moved.s])
 				{
 					auto pos = geom.principal(d + moved.lattice_pos());
-					if (cfg.bond_occ[pos.index(w)])
+					if (pos.x >= 0 && pos.y >= 0 && pos.x < w && pos.y < h && cfg.bond_occ[pos.index(w)])
 						add_pocket_candidate(pos.index(w), 0, 1, 0);
 				}
 			}
 		}
 	}
 
-	template<typename Rng> int pocket_move(Rng& rng, double u, double j4)
+	template <typename Rng> int pocket_move(Rng& rng, double u, double j4)
 	{
 		if (!geom.are_symmetries_correct())
 		{
@@ -302,7 +321,15 @@ public:
 			uint candidate = (uint)(rng() % cfg.bond_occ.size());
 
 			symc = LatticePos((int)(rng() % w), (int)(rng() % h));
-			syma = (int)(rng() % geom.n_symmetries());
+
+			if constexpr (std::is_same_v<Geometry, TrimerTriangularGeometry<OpenBoundaryCondition>>)
+			{
+				syma = (int)(rng() % 12);
+			}
+			else
+			{
+				syma = (int)(rng() % geom.n_symmetries());
+			}
 
 			if (cfg.bond_occ[candidate])
 			{
@@ -321,9 +348,11 @@ public:
 		cfg.bond_occ[seed.index(w)] = false;
 		for (const auto& i : geom.get_vertices(seed))
 		{
-			ASSERT(cfg.vertex_occ[i.index(w)] > 0);
-			cfg.vertex_occ[i.index(w)]--;
+			ASSERT(cfg.vertex_occ[i.index(vertex_w)] > 0);
+			cfg.vertex_occ[i.index(vertex_w)]--;
 		}
+
+		std::cout << "begin" << std::endl;
 
 		int length = 0;
 		while (_pocket.size() > 0)
@@ -333,6 +362,8 @@ public:
 			_pocket.pop_back();
 
 			auto moved = geom.apply_symmetry(el, symc, syma);
+			std::cout << el << " " << moved << std::endl;
+
 			_Abar.push_back(moved);
 
 			set_pocket_candidates(el, moved, u, j4);
@@ -343,7 +374,7 @@ public:
 
 				double u_factor = interactions.u != 0 ? u * interactions.u : 0;
 				double j4_factor = interactions.j4 != 0 ? j4 * interactions.j4 : 0;
-				
+
 				if (u_factor == infinity || u_factor == -infinity)
 					j4_factor = 0;
 
@@ -360,8 +391,8 @@ public:
 					cfg.bond_occ[pos.index(w)] = false;
 					for (const auto& vtx : geom.get_vertices(pos))
 					{
-						ASSERT(cfg.vertex_occ[vtx.index(w)] > 0);
-						cfg.vertex_occ[vtx.index(w)]--;
+						ASSERT(cfg.vertex_occ[vtx.index(vertex_w)] > 0);
+						cfg.vertex_occ[vtx.index(vertex_w)]--;
 					}
 				}
 
@@ -376,7 +407,7 @@ public:
 			cfg.bond_occ[i.index(w)] = true;
 
 			for (const auto& vtx : geom.get_vertices(i))
-				cfg.vertex_occ[vtx.index(w)]++;
+				cfg.vertex_occ[vtx.index(vertex_w)]++;
 		}
 
 #ifdef TEST
@@ -398,7 +429,7 @@ public:
 	move_from: the location of the bond that will be moved by this function and stored into `moving`
 	direction: the index of `move_from` wrt `pos` according to geom::get_bonds()
 	*/
-	template<typename Rng>
+	template <typename Rng>
 	void worm_flip(Rng& rng, vertex_t& pos, bond_t& moving, const bond_t& move_from, int direction)
 	{
 		ASSERT(cfg.bond_occ[move_from.index(w)]);
@@ -416,21 +447,21 @@ public:
 
 		int flipdir = 0;
 		if (flips.size() > 1)
-			flipdir = (int) (rng() % flips.size());
+			flipdir = (int)(rng() % flips.size());
 
 		moving = flips[flipdir].second;
 		pos = flips[flipdir].first;
 	}
 
-	template<typename Rng> vertex_t worm_init(Rng& rng, bond_t start, bond_t& moving)
+	template <typename Rng> vertex_t worm_init(Rng& rng, bond_t start, bond_t& moving)
 	{
 		const auto& vertices = geom.get_vertices(start);
-		int dir = (int) (rng() % vertices.size());
-		
+		int dir = (int)(rng() % vertices.size());
+
 		// start the chain and remove a charge
 		vertex_t pos = vertices[dir];
-		cfg.vertex_occ[pos.index(w)]--;
-		cfg.clusters_total -= cfg.vertex_occ[pos.index(w)];
+		cfg.vertex_occ[pos.index(vertex_w)]--;
+		cfg.clusters_total -= cfg.vertex_occ[pos.index(vertex_w)];
 
 		// figure out the position of the bond relative to the vertex
 		const auto& bonds = geom.get_bonds(pos);
@@ -439,12 +470,12 @@ public:
 		ASSERT(mono_dir != bonds.end());
 
 		// set the correct direction for the flip based on which vertex was chosen
-		worm_flip(rng, pos, moving, start, (int) (mono_dir - bonds.begin()));
+		worm_flip(rng, pos, moving, start, (int)(mono_dir - bonds.begin()));
 
 		return pos;
 	}
 
-	template<typename Rng> int worm_move(Rng& rng, double u)
+	template <typename Rng> int worm_move(Rng& rng, double u)
 	{
 		calculate_energy();
 
@@ -474,20 +505,20 @@ public:
 			{
 				// choose a random direction
 
-				int occupation = cfg.vertex_occ[pos.index(w)];
+				int occupation = cfg.vertex_occ[pos.index(vertex_w)];
 				double p_continue = 1 - std::exp(-u * occupation);
 
 				if (occupation < 1 || uniform(rng) > p_continue)
 					break;
-				
+
 				found_directions.clear();
 				const auto& trimers = geom.get_bonds(pos);
 
-				for (int i = 0; i < (int) trimers.size(); i++)
+				for (int i = 0; i < (int)trimers.size(); i++)
 					if (cfg.bond_occ[trimers[i].index(w)])
 						found_directions.push_back(i);
 
-				ASSERT(found_directions.size() == (size_t) occupation);
+				ASSERT(found_directions.size() == (size_t)occupation);
 
 				int new_dir = found_directions[rng() % found_directions.size()];
 				const auto& chosen_trimer = trimers[new_dir];
@@ -502,7 +533,7 @@ public:
 
 				ASSERT(found != trimers.end());
 
-				worm_flip(rng, pos, moving, moving, (int) (found - trimers.begin()));
+				worm_flip(rng, pos, moving, moving, (int)(found - trimers.begin()));
 			}
 		}
 
@@ -510,8 +541,8 @@ public:
 		cfg.bond_occ[moving.index(w)] = true;
 		change_j4_bonds(moving, 1);
 
-		cfg.clusters_total += cfg.vertex_occ[pos.index(w)];
-		cfg.vertex_occ[pos.index(w)]++;
+		cfg.clusters_total += cfg.vertex_occ[pos.index(vertex_w)];
+		cfg.vertex_occ[pos.index(vertex_w)]++;
 
 #ifdef TEST
 		int oldj4 = cfg.j4_total;
@@ -561,7 +592,7 @@ public:
 		int dcluster = 0;
 		for (const auto& vtx : geom.get_vertices(seed))
 		{
-			auto& count = cfg.vertex_occ[vtx.index(w)];
+			auto& count = cfg.vertex_occ[vtx.index(vertex_w)];
 			// difference due to removing one
 			// (x-1)(x-2)/2 - x(x-1)/2 = 1 - x
 			dcluster += 1 - count;
@@ -570,7 +601,7 @@ public:
 		}
 		for (const auto& vtx : geom.get_vertices(dest))
 		{
-			auto& count = cfg.vertex_occ[vtx.index(w)];
+			auto& count = cfg.vertex_occ[vtx.index(vertex_w)];
 			// difference due to adding one
 			// x(x+1)/2 - x(x-1)/2 = x
 			dcluster += count;
@@ -596,7 +627,7 @@ public:
 	}
 };
 
-template<typename T> struct Accumulator
+template <typename T> struct Accumulator
 {
 	std::vector<T> mean;
 	std::vector<T> m2;
@@ -668,10 +699,11 @@ template <typename T> struct MovingAverage
 	}
 };
 
-template<typename T> struct Observer { };
+template <typename T> struct Observer
+{
+};
 
-template<>
-struct Observer<DimerSquareGeometry<>>
+template <> struct Observer<DimerSquareGeometry<>>
 {
 	using sample_t = Sample<DimerSquareGeometry<>>;
 	using bond_t = sample_t::bond_t;
@@ -681,12 +713,12 @@ struct Observer<DimerSquareGeometry<>>
 	{
 		bond_t start(0, 0, 0);
 
-        if (dir == 0)
-            start.s = 1;
-        else
-            start.s = 0;
+		if (dir == 0)
+			start.s = 1;
+		else
+			start.s = 0;
 
-        auto pos = start;
+		auto pos = start;
 		int tot = 0;
 		int sign = 1;
 
@@ -695,10 +727,10 @@ struct Observer<DimerSquareGeometry<>>
 			if (sample.cfg.bond_occ[pos.index(sample.w)])
 				tot += sign;
 
-            if (dir == 0)
-                pos.x++;
-            else
-                pos.y++;
+			if (dir == 0)
+				pos.x++;
+			else
+				pos.y++;
 			pos = sample.geom.principal(pos);
 
 			sign *= -1;
@@ -710,26 +742,26 @@ struct Observer<DimerSquareGeometry<>>
 
 	std::pair<int, int> calculate_topo_sector(const sample_t& sample) const
 	{
-        int a = calculate_winding_number(sample, 0);
-        int b = calculate_winding_number(sample, 1);
+		int a = calculate_winding_number(sample, 0);
+		int b = calculate_winding_number(sample, 1);
 
 		return std::make_pair(a, b);
 	}
 };
 
-template<>
-struct Observer<TrimerTriangularGeometry<>>
+template <typename BoundaryCondition> struct Observer<TrimerTriangularGeometry<BoundaryCondition>>
 {
-	using sample_t = Sample<TrimerTriangularGeometry<>>;
+	using sample_t = Sample<TrimerTriangularGeometry<BoundaryCondition>>;
 	using vertex_t = sample_t::vertex_t;
 	using bond_t = sample_t::bond_t;
 
 	std::unordered_map<int, std::vector<complex>> _ft_contributions;
 
-	template<typename Rng>
-	void record_dimer_monomer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng, int max_dimers) const
+	template <typename Rng>
+	void record_dimer_monomer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng,
+										   int max_dimers) const
 	{
-		std::vector<double> vals(sample.w * sample.h);
+		std::vector<double> vals(sample.vertex_w * sample.vertex_h);
 
 		std::vector<std::pair<vertex_t, int>> dimers;
 		std::unordered_set<vertex_t> isolated_monos;
@@ -743,11 +775,11 @@ struct Observer<TrimerTriangularGeometry<>>
 				continue;
 
 			bool connected = false;
-			auto pos = vertex_t::from_index(i, sample.w);
+			auto pos = vertex_t::from_index(i, sample.vertex_w);
 			for (int r = 0; r < 3; r++)
 			{
 				auto neighbor = sample.geom.principal(pos + neighbors[r]);
-				if (sample.cfg.vertex_occ[neighbor.index(sample.w)] == 0)
+				if (sample.cfg.vertex_occ[neighbor.index(sample.vertex_w)] == 0)
 				{
 					dimers.push_back(std::make_pair(pos, r));
 					isolated_monos.erase(neighbor);
@@ -768,7 +800,8 @@ struct Observer<TrimerTriangularGeometry<>>
 		{
 			auto dimer = dimers[i];
 			for (auto j : isolated_monos)
-				vals[sample.geom.principal(sample.geom.rotate(j - dimer.first, pmod(-dimer.second, 6))).index(sample.w)]++;
+				vals[sample.geom.principal(sample.geom.rotate(j - dimer.first, pmod(-dimer.second, 6)))
+						 .index(sample.vertex_w)]++;
 		}
 
 		a.record(vals);
@@ -787,7 +820,7 @@ struct Observer<TrimerTriangularGeometry<>>
 				bond_t n;
 
 				if (p1.s == 1)
-					n = bond_t(-p1.x + d.x, -p1.y + d.y, (int8_t) (1 - d.s));
+					n = bond_t(-p1.x + d.x, -p1.y + d.y, (int8_t)(1 - d.s));
 				else
 					n = bond_t(p1.x + d.x, p1.y + d.y, d.s);
 
@@ -814,7 +847,7 @@ struct Observer<TrimerTriangularGeometry<>>
 						auto p2 = bond_t::from_index(j, sample.w);
 
 						auto d = p1.s == 0 ? bond_t(p2.x - p1.x, p2.y - p1.y, p2.s)
-										   : bond_t(p1.x - p2.x, p1.y - p2.y, (int8_t) (1 - p2.s));
+										   : bond_t(p1.x - p2.x, p1.y - p2.y, (int8_t)(1 - p2.s));
 
 						vals[sample.geom.principal(d).index(sample.w)]++;
 					}
@@ -823,8 +856,9 @@ struct Observer<TrimerTriangularGeometry<>>
 		a.record(vals);
 	}
 
-	template<typename Rng>
-	void record_partial_trimer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng, double fraction) const
+	template <typename Rng>
+	void record_partial_trimer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng,
+											double fraction) const
 	{
 		std::vector<double> vals(sample.w * sample.h * 2);
 		std::uniform_real_distribution<> uniform(0., 1.);
@@ -842,7 +876,7 @@ struct Observer<TrimerTriangularGeometry<>>
 						auto p2 = bond_t::from_index(j, sample.w);
 
 						auto d = p1.s == 0 ? bond_t(p2.x - p1.x, p2.y - p1.y, p2.s)
-										   : bond_t(p1.x - p2.x, p1.y - p2.y, (int8_t) (1 - p2.s));
+										   : bond_t(p1.x - p2.x, p1.y - p2.y, (int8_t)(1 - p2.s));
 
 						vals[sample.geom.principal(d).index(sample.w)]++;
 					}
@@ -874,8 +908,8 @@ struct Observer<TrimerTriangularGeometry<>>
 		const double Kpx0 = 4. / 3, Kpy0 = 0;
 		// const double Kpx1 = -2. / 3, Kpy1 = 2 * rt3 / 3;
 		// const double Kpx2 = -2. / 3, Kpy2 = -2 * rt3 / 3;
-		const double Kpx1 = 4. / 3, Kpy1 = 4. / rt3 / (double) sample.h;
-		const double Kpx2 = 4. / 3, Kpy2 = 8. / rt3 / (double) sample.w;
+		const double Kpx1 = 4. / 3, Kpy1 = 4. / rt3 / (double)sample.h;
+		const double Kpx2 = 4. / 3, Kpy2 = 8. / rt3 / (double)sample.w;
 
 		const double Mpx0 = 0, Mpy0 = 2 * rt3 / 3;
 		const double Mpx1 = 1, Mpy1 = -rt3 / 3;
@@ -885,7 +919,7 @@ struct Observer<TrimerTriangularGeometry<>>
 
 		int AmB = 0;
 
-		for (int i = 0; i < (int) sample.cfg.bond_occ.size(); i++)
+		for (int i = 0; i < (int)sample.cfg.bond_occ.size(); i++)
 		{
 			if (sample.cfg.bond_occ[i])
 			{
@@ -948,14 +982,15 @@ struct Observer<TrimerTriangularGeometry<>>
 	}
 
 	template <typename Rng>
-	void record_partial_monomer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng, int max_count) const
+	void record_partial_monomer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng,
+											 int max_count) const
 	{
 		std::vector<double> vals(sample.w * sample.h);
 		std::vector<vertex_t> pos;
 
 		for (uint i = 0; i < sample.cfg.vertex_occ.size(); i++)
 			if (sample.cfg.vertex_occ[i] == 0)
-				pos.push_back(vertex_t::from_index(i, sample.w));
+				pos.push_back(vertex_t::from_index(i, sample.vertex_w));
 
 		std::shuffle(pos.begin(), pos.end(), rng);
 		uint sample_count = (uint)std::min(pos.size(), (size_t)max_count);
@@ -965,7 +1000,7 @@ struct Observer<TrimerTriangularGeometry<>>
 			for (uint j = 0; j < pos.size(); j++)
 			{
 				auto d = pos[i] - pos[j];
-				vals[sample.geom.principal(d).index(sample.w)]++;
+				vals[sample.geom.principal(d).index(sample.vertex_w)]++;
 			}
 		}
 
@@ -985,19 +1020,19 @@ struct Observer<TrimerTriangularGeometry<>>
 
 		for (uint i = 0; i < sample.cfg.vertex_occ.size(); i++)
 			if (sample.cfg.vertex_occ[i] == 0)
-				pos.push_back(vertex_t::from_index(i, sample.w));
+				pos.push_back(vertex_t::from_index(i, sample.vertex_w));
 
 		for (uint i = 0; i < pos.size(); i++)
 		{
 			for (uint j = i + 1; j < pos.size(); j++)
 			{
 				auto d = pos[i] - pos[j];
-				vals[sample.geom.principal(d).index(sample.w)] += 1;
-				vals[sample.geom.principal(-d).index(sample.w)] += 1;
+				vals[sample.geom.principal(d).index(sample.vertex_w)] += 1;
+				vals[sample.geom.principal(-d).index(sample.vertex_w)] += 1;
 			}
 		}
 
-		double inv_count = 1. / (double) pos.size();
+		double inv_count = 1. / (double)pos.size();
 		for (auto& x : vals)
 			x *= inv_count;
 
@@ -1098,8 +1133,7 @@ struct Observer<TrimerTriangularGeometry<>>
 	}
 };
 
-template<typename BoundaryCondition>
-struct Observer<DimerHexagonalGeometry<BoundaryCondition>>
+template <typename BoundaryCondition> struct Observer<DimerHexagonalGeometry<BoundaryCondition>>
 {
 	using sample_t = Sample<DimerHexagonalGeometry<BoundaryCondition>>;
 	using vertex_t = typename sample_t::vertex_t;
@@ -1113,13 +1147,13 @@ struct Observer<DimerHexagonalGeometry<BoundaryCondition>>
 		else
 			start.s = 1;
 
-        auto pos = start;
+		auto pos = start;
 		int bonds = 0;
-        int total = 0;
+		int total = 0;
 
 		while (true)
 		{
-            total++;
+			total++;
 			if (sample.cfg.bond_occ[pos.index(sample.w)])
 				bonds++;
 
@@ -1145,8 +1179,9 @@ struct Observer<DimerHexagonalGeometry<BoundaryCondition>>
 		return std::make_pair(wa, wb);
 	}
 
-	template<typename Rng>
-	void record_partial_dimer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng, double fraction) const
+	template <typename Rng>
+	void record_partial_dimer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng,
+										   double fraction) const
 	{
 		std::vector<double> vals(sample.w * sample.h * 9);
 		std::uniform_real_distribution<> uniform(0., 1.);
@@ -1163,10 +1198,11 @@ struct Observer<DimerHexagonalGeometry<BoundaryCondition>>
 						auto p1 = bond_t::from_index(i, sample.w);
 						auto p2 = bond_t::from_index(j, sample.w);
 
-						// auto d = SublatticePos<9>(p2.x - p1.x + sample.w, p2.y - p1.y + sample.h, (int8_t) (p1.s * 3 + p2.s));
-						// vals[d.index(sample.w*2)]++;
+						// auto d = SublatticePos<9>(p2.x - p1.x + sample.w, p2.y - p1.y + sample.h, (int8_t) (p1.s * 3
+						// + p2.s)); vals[d.index(sample.w*2)]++;
 
-						auto d = SublatticePos<9>(p2.x - p1.x + sample.w, p2.y - p1.y + sample.h, (int8_t) (p1.s * 3 + p2.s));
+						auto d =
+							SublatticePos<9>(p2.x - p1.x + sample.w, p2.y - p1.y + sample.h, (int8_t)(p1.s * 3 + p2.s));
 						vals[sample.geom.principal(d).index(sample.w)]++;
 					}
 			}
@@ -1182,14 +1218,15 @@ struct Observer<DimerHexagonalGeometry<BoundaryCondition>>
 	}
 
 	template <typename Rng>
-	void record_partial_monomer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng, int max_count) const
+	void record_partial_monomer_correlations(const sample_t& sample, Accumulator<double>& a, Rng& rng,
+											 int max_count) const
 	{
-		std::vector<double> vals(sample.w * sample.h * 2);
+		std::vector<double> vals(sample.vertex_w * sample.vertex_h * 2);
 		std::vector<vertex_t> pos;
 
 		for (uint i = 0; i < sample.cfg.vertex_occ.size(); i++)
 			if (sample.cfg.vertex_occ[i] == 0)
-				pos.push_back(vertex_t::from_index(i, sample.w));
+				pos.push_back(vertex_t::from_index(i, sample.vertex_w));
 
 		std::shuffle(pos.begin(), pos.end(), rng);
 		uint sample_count = (uint)std::min(pos.size(), (size_t)max_count);
@@ -1199,9 +1236,9 @@ struct Observer<DimerHexagonalGeometry<BoundaryCondition>>
 			for (uint j = 0; j < pos.size(); j++)
 			{
 				auto d = pos[i].s == 0 ? vertex_t(pos[j].x - pos[i].x, pos[j].y - pos[i].y, pos[j].s)
-				                       : vertex_t(pos[i].x - pos[j].x, pos[i].y - pos[j].y, (int8_t) (1 - pos[j].s));
+									   : vertex_t(pos[i].x - pos[j].x, pos[i].y - pos[j].y, (int8_t)(1 - pos[j].s));
 
-				vals[sample.geom.principal(d).index(sample.w)]++;
+				vals[sample.geom.principal(d).index(sample.vertex_w)]++;
 			}
 		}
 
@@ -1216,10 +1253,11 @@ struct Observer<DimerHexagonalGeometry<BoundaryCondition>>
 	}
 };
 
-template<typename T> struct SampleInitializer { };
+template <typename T> struct SampleInitializer
+{
+};
 
-template<typename BoundaryCondition>
-struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
+template <typename BoundaryCondition> struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
 {
 	using sample_t = Sample<TrimerTriangularGeometry<BoundaryCondition>>;
 	using bond_t = typename sample_t::bond_t;
@@ -1234,7 +1272,7 @@ struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
 			reconfigure_root3(sample, rng, 0);
 	}
 
-	template<typename Rng> void initialize(sample_t& sample, const Options& opt, Rng& rng)
+	template <typename Rng> void initialize(sample_t& sample, const Options& opt, Rng& rng)
 	{
 		if (opt.init_random)
 		{
@@ -1252,12 +1290,9 @@ struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
 		}
 	}
 
-	template<typename Rng> void reconfigure_brick_wall(sample_t& sample, Rng& rng, int vacancies = 0)
+	template <typename Rng> void reconfigure_brick_wall(sample_t& sample, Rng& rng, int vacancies = 0)
 	{
 		int w = sample.w, h = sample.h;
-
-		if (w != h || w % 6)
-			throw "";
 
 		std::fill(sample.cfg.bond_occ.begin(), sample.cfg.bond_occ.end(), false);
 		std::fill(sample.cfg.vertex_occ.begin(), sample.cfg.vertex_occ.end(), 0);
@@ -1309,7 +1344,8 @@ struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
 					cur_pos = bond_t(cur_row_start.x + offset / 2, cur_row_start.y, offset % 2);
 					break;
 				case 1:
-					cur_pos = bond_t(cur_row_start.x - offset / 2 - offset % 2, cur_row_start.y + offset / 2, offset % 2);
+					cur_pos =
+						bond_t(cur_row_start.x - offset / 2 - offset % 2, cur_row_start.y + offset / 2, offset % 2);
 					break;
 				case 2:
 					cur_pos = bond_t(cur_row_start.x, cur_row_start.y - (offset + 1) / 2, offset % 2);
@@ -1320,9 +1356,11 @@ struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
 
 				if (n++ >= vacancies)
 				{
-					sample.cfg.bond_occ[sample.geom.principal(cur_pos).index(w)] = true;
-					for (const auto& vtx : sample.geom.get_vertices(cur_pos))
-						sample.cfg.vertex_occ[vtx.index(w)]++;
+					auto principal = PeriodicBoundaryCondition(w, h, sample.skew).principal(cur_pos);
+
+					sample.cfg.bond_occ[principal.index(w)] = true;
+					for (const auto& vtx : sample.geom.get_vertices(principal))
+						sample.cfg.vertex_occ[vtx.index(sample.vertex_w)]++;
 				}
 			}
 
@@ -1344,7 +1382,8 @@ struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
 		sample.cfg.clusters_total = 0;
 	}
 
-	template <typename Rng> void load_from(sample_t& sample, std::string file, Rng& rng, int vacancies, int line_number = -1)
+	template <typename Rng>
+	void load_from(sample_t& sample, std::string file, Rng& rng, int vacancies, int line_number = -1)
 	{
 		std::fill(sample.cfg.bond_occ.begin(), sample.cfg.bond_occ.end(), false);
 		std::fill(sample.cfg.vertex_occ.begin(), sample.cfg.vertex_occ.end(), 0);
@@ -1374,7 +1413,7 @@ struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
 			while (std::getline(ss2, token2, ','))
 				nums.push_back(std::stoi(token2));
 
-			positions.push_back(bond_t(nums[0], nums[1], (int8_t) nums[2]));
+			positions.push_back(bond_t(nums[0], nums[1], (int8_t)nums[2]));
 		}
 
 		if (positions.size() != (uint)(sample.w * sample.h / 3))
@@ -1386,30 +1425,30 @@ struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
 			const auto& pos = positions[i];
 			sample.cfg.bond_occ[pos.index(sample.w)] = true;
 			for (const auto& vtx : sample.geom.get_vertices(pos))
-				sample.cfg.vertex_occ[vtx.index(sample.w)]++;
+				sample.cfg.vertex_occ[vtx.index(sample.vertex_w)]++;
 		}
 
 		sample.cfg.j4_total = -1;
 		sample.cfg.clusters_total = -1;
 	}
 
-	template<typename Rng> void reconfigure_root3(sample_t& sample, Rng& rng, int vacancies = 0)
+	template <typename Rng> void reconfigure_root3(sample_t& sample, Rng& rng, int vacancies = 0)
 	{
 		std::fill(sample.cfg.bond_occ.begin(), sample.cfg.bond_occ.end(), false);
 		std::fill(sample.cfg.vertex_occ.begin(), sample.cfg.vertex_occ.end(), 0);
 
-		int offset = (int) (rng() % 6);
+		int offset = (int)(rng() % 6);
 
 		int n = 0;
 		for (int i = 0; i < sample.w; i += 3)
 			for (int j = 0; j < sample.h; j++)
 				if (n++ >= vacancies)
 				{
-					auto pos = bond_t(i + j + offset / 2, j, (int8_t) (offset % 2));
+					auto pos = bond_t(i + j + offset / 2, j, (int8_t)(offset % 2));
 
 					sample.cfg.bond_occ[sample.geom.principal(pos).index(sample.w)] = true;
 					for (const auto& vtx : sample.geom.get_vertices(pos))
-						sample.cfg.vertex_occ[vtx.index(sample.w)]++;
+						sample.cfg.vertex_occ[vtx.index(sample.vertex_w)]++;
 				}
 
 		sample.cfg.j4_total = 0;
@@ -1417,14 +1456,13 @@ struct SampleInitializer<TrimerTriangularGeometry<BoundaryCondition>>
 	}
 };
 
-template<typename BoundaryCondition>
-struct SampleInitializer<DimerSquareGeometry<BoundaryCondition>>
+template <typename BoundaryCondition> struct SampleInitializer<DimerSquareGeometry<BoundaryCondition>>
 {
 	using sample_t = Sample<DimerSquareGeometry<BoundaryCondition>>;
 	using bond_t = typename sample_t::bond_t;
 
 	int nv = 0;
-	void basic_initialize(sample_t& sample, int vacancies)
+	void basic_initialize(sample_t& sample, int vacancies = 0)
 	{
 		std::vector<bond_t> positions;
 		for (int i = 0; i < sample.w; i += 2)
@@ -1436,13 +1474,12 @@ struct SampleInitializer<DimerSquareGeometry<BoundaryCondition>>
 	}
 };
 
-template<typename BoundaryCondition>
-struct SampleInitializer<DimerHexagonalGeometry<BoundaryCondition>>
+template <typename BoundaryCondition> struct SampleInitializer<DimerHexagonalGeometry<BoundaryCondition>>
 {
 	using sample_t = Sample<DimerHexagonalGeometry<BoundaryCondition>>;
 	using bond_t = typename sample_t::bond_t;
 
-	void basic_initialize(sample_t& sample, int vacancies=0)
+	void basic_initialize(sample_t& sample, int vacancies = 0)
 	{
 		std::vector<bond_t> positions;
 		int nv = 0;
@@ -1455,15 +1492,13 @@ struct SampleInitializer<DimerHexagonalGeometry<BoundaryCondition>>
 	}
 };
 
-template<typename T> inline void write_binary(std::ostream& o, const T& t)
+template <typename T> inline void write_binary(std::ostream& o, const T& t)
 {
 	o.write(reinterpret_cast<const char*>(&t), sizeof(t));
 }
 
-struct PTWorker
+template <typename Geometry> struct PTWorker
 {
-	using Geometry = TrimerTriangularGeometry<>;
-
 	const Options options;
 	double temperature;
 
@@ -1510,7 +1545,8 @@ struct PTWorker
 	PTWorker(const Options& opt, double temperature, bool output) : options(opt), temperature(temperature), timing(2, 1)
 	{
 		start_time = std::chrono::high_resolution_clock::now();
-		sample = Sample<Geometry>(opt.domain_w, opt.domain_h, opt.domain_skew);
+
+		sample = Sample<Geometry>(opt.domain_w, opt.domain_h, opt.domain_skew, opt.domain_open_bc);
 
 		rng.seed(
 			std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
@@ -1553,18 +1589,16 @@ struct PTWorker
 				std::stringstream ss;
 				if (options.u == 1)
 				{
-					ss << options.domain_w << "x" << options.domain_h << "_r-" << options.mono_vacancies
-					   << "_t" << std::fixed << std::setprecision(6) << temperature
-					   << "_j" << std::setprecision(3) << options.j4
-					   << "_" << options.total_steps << "." << options.decorr_interval << "_" << runid++;
+					ss << options.domain_w << "x" << options.domain_h << "_r-" << options.mono_vacancies << "_t"
+					   << std::fixed << std::setprecision(6) << temperature << "_j" << std::setprecision(3)
+					   << options.j4 << "_" << options.total_steps << "." << options.decorr_interval << "_" << runid++;
 				}
 				else
 				{
-					ss << options.domain_w << "x" << options.domain_h << "_r-" << options.mono_vacancies
-					   << "_t" << std::fixed << std::setprecision(6) << temperature
-					   << "_u" << std::setprecision(3) << options.u
-					   <<"_j" << std::setprecision(3) << options.j4
-					   << "_" << options.total_steps << "." << options.decorr_interval << "_" << runid++;
+					ss << options.domain_w << "x" << options.domain_h << "_r-" << options.mono_vacancies << "_t"
+					   << std::fixed << std::setprecision(6) << temperature << "_u" << std::setprecision(3) << options.u
+					   << "_j" << std::setprecision(3) << options.j4 << "_" << options.total_steps << "."
+					   << options.decorr_interval << "_" << runid++;
 				}
 
 				basepath = std::filesystem::path("new-data") / options.directory / ss.str();
@@ -1582,13 +1616,11 @@ struct PTWorker
 			ofsector = std::ofstream(basepath / "winding-histogram.dat", std::ios::binary);
 			ofconf = std::ofstream(basepath / "positions.dat");
 
-			amonomono =
-				Accumulator<double>(options.domain_w * options.domain_h, options.accumulator_interval);
+			amonomono = Accumulator<double>(options.domain_w * options.domain_h, options.accumulator_interval);
 			aorder = Accumulator<double>(11, options.accumulator_interval);
 			aclustercount = Accumulator<double>(7, options.accumulator_interval);
 			amonodi = Accumulator<double>(options.domain_w * options.domain_h, options.accumulator_interval);
-			atritri =
-				Accumulator<double>(options.domain_w * options.domain_h * 2, options.accumulator_interval);
+			atritri = Accumulator<double>(options.domain_w * options.domain_h * 2, options.accumulator_interval);
 			aenergy = Accumulator<double>(5, options.accumulator_interval);
 		}
 	}
@@ -1610,7 +1642,7 @@ struct PTWorker
 			else if (options.metropolis)
 			{
 				sample.calculate_energy();
-				Sample<Geometry>::Configuration copy = sample.cfg;
+				typename Sample<Geometry>::Configuration copy = sample.cfg;
 				sample.metropolis_move(rng);
 				sample.calculate_energy();
 
@@ -1628,7 +1660,7 @@ struct PTWorker
 				else
 				{
 					sample.calculate_energy();
-					Sample<Geometry>::Configuration copy = sample.cfg;
+					typename Sample<Geometry>::Configuration copy = sample.cfg;
 					sample.worm_move(rng, u);
 					sample.calculate_energy();
 
@@ -1666,7 +1698,7 @@ struct PTWorker
 
 		if (io_initialized)
 		{
-			Observer<Geometry>::Observables ordervals;
+			typename Observer<Geometry>::Observables ordervals;
 			double energy = 0;
 
 			if (options.out_monomono)
@@ -1741,12 +1773,12 @@ struct PTWorker
 
 double lerp(double x, double a, double b) { return a + x * (b - a); }
 
-struct PTEnsemble
+template <typename Geometry = TrimerTriangularGeometry<>> struct PTEnsemble
 {
 	const Options options;
 
 	std::minstd_rand rng;
-	std::vector<PTWorker> chains;
+	std::vector<PTWorker<Geometry>> chains;
 	int swap_count = 0;
 
 	Accumulator<double> timing;
@@ -1761,7 +1793,7 @@ struct PTEnsemble
 				.count());
 
 		for (uint i = 0; i < options.temperatures.size(); i++)
-			chains.push_back(PTWorker(options, options.temperatures[i], !options.adaptive_pt));
+			chains.push_back(PTWorker<Geometry>(options, options.temperatures[i], !options.adaptive_pt));
 
 		acceptance_ratios = Accumulator<double>((uint)(chains.size() - 1), 1);
 		acceptance_ratios_ma = MovingAverage<double>((uint)(chains.size() - 1), 200);
@@ -1770,7 +1802,7 @@ struct PTEnsemble
 	int steps_done = 0;
 	int last_output = 0;
 
-	static void optimize_schedule(const Accumulator<double>& acceptance_ratios, std::vector<PTWorker>& chains)
+	static void optimize_schedule(const Accumulator<double>& acceptance_ratios, std::vector<PTWorker<Geometry>>& chains)
 	{
 		// calculate communication barriers
 		std::vector<double> betas;
@@ -1815,7 +1847,8 @@ struct PTEnsemble
 			chains[i].sample.calculate_energy();
 			chains[i + 1].sample.calculate_energy();
 
-			double u_factor = (chains[i].sample.cfg.clusters_total - chains[i + 1].sample.cfg.clusters_total) * options.u;
+			double u_factor =
+				(chains[i].sample.cfg.clusters_total - chains[i + 1].sample.cfg.clusters_total) * options.u;
 			if (options.u == infinity)
 				u_factor = 0;
 
@@ -2216,13 +2249,11 @@ struct MuCaEnsemble
 	}
 };
 
-template<typename Geometry>
-void basic_sim(const Options& options)
+template <typename Geometry> void basic_sim(const Options& options)
 {
 	std::minstd_rand rng;
-	rng.seed(
-		std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
-			.count());
+	rng.seed(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
+				 .count());
 
 	Sample<Geometry> sample(options.domain_w, options.domain_h, options.domain_skew);
 	SampleInitializer<Geometry> init;
@@ -2257,8 +2288,8 @@ void basic_sim(const Options& options)
 		nstep += options.decorr_interval;
 
 		auto windings = obs.calculate_topo_sector(sample);
-		write_binary<int16_t>(ofhist, (int16_t) windings.first);
-		write_binary<int16_t>(ofhist, (int16_t) windings.second);
+		write_binary<int16_t>(ofhist, (int16_t)windings.first);
+		write_binary<int16_t>(ofhist, (int16_t)windings.second);
 		ofhist.flush();
 
 		if constexpr (std::is_same_v<Geometry, DimerHexagonalGeometry<>>)
@@ -2357,6 +2388,7 @@ void sim(int argc, char** argv)
 	options.metropolis = optstring.find('M') != std::string::npos;
 	options.adaptive_pt = optstring.find('A') != std::string::npos;
 	options.init_random = optstring.find('R') != std::string::npos;
+	options.domain_open_bc = optstring.find('O') != std::string::npos;
 
 	options.multicanonical = optstring.find('C') != std::string::npos;
 	options.multicanonical_round_length = options.total_steps;
@@ -2386,17 +2418,28 @@ void sim(int argc, char** argv)
 		}
 		else
 		{
-			PTEnsemble ensemble(options);
-			while (ensemble.steps_done < options.total_steps)
-				ensemble.step_all();
-			ensemble.final_output();
+			if (options.domain_open_bc)
+			{
+				options.pocket_fraction = 1;
+				PTEnsemble<TrimerTriangularGeometry<OpenBoundaryCondition>> ensemble(options);
+				while (ensemble.steps_done < options.total_steps)
+					ensemble.step_all();
+				ensemble.final_output();
+			}
+			else
+			{
+				PTEnsemble<> ensemble(options);
+				while (ensemble.steps_done < options.total_steps)
+					ensemble.step_all();
+				ensemble.final_output();
+			}
 		}
 	}
 }
 
 void test_optimizer()
 {
-	std::vector<PTWorker> chains(3);
+	std::vector<PTWorker<TrimerTriangularGeometry<>>> chains(3);
 	chains[0].temperature = 1;
 	chains[1].temperature = 2;
 	chains[2].temperature = 3;
@@ -2404,7 +2447,7 @@ void test_optimizer()
 	Accumulator<double> acceptance_ratios(2, 1);
 	acceptance_ratios.mean = std::vector<double>{0.5, 0};
 
-	PTEnsemble::optimize_schedule(acceptance_ratios, chains);
+	PTEnsemble<>::optimize_schedule(acceptance_ratios, chains);
 
 	// betas = [1, 0.5, 0.33]
 	// communication barriers = [0, 0.5, 1.5]
@@ -2413,11 +2456,20 @@ void test_optimizer()
 	TEST_ASSERT2(std::abs(chains[1].temperature - 2.1815) < 1e-2, chains[1].temperature)
 }
 
-template<typename Geometry>
-void test_pocket(int w, int h, int skew)
+template <typename Geometry> void test_pocket(int w, int h, int skew)
 {
 	SampleInitializer<Geometry> init;
-	Sample<Geometry> sample(w, h, skew);
+	Sample<Geometry> sample;
+
+	if constexpr (std::is_same_v<Geometry, TrimerTriangularGeometry<OpenBoundaryCondition>>)
+	{
+		sample = Sample<Geometry>(w, h, skew, true);
+	}
+	else
+	{
+		sample = Sample<Geometry>(w, h, skew);
+	}
+
 	std::minstd_rand rng;
 	init.basic_initialize(sample);
 
@@ -2426,10 +2478,18 @@ void test_pocket(int w, int h, int skew)
 
 	TEST_ASSERT2(sample.cfg.clusters_total == 0, sample.cfg.clusters_total);
 
+	std::ofstream ofconf("data/positions.dat");
+
 	double total = 0;
 	for (int i = 0; i < 300; i++)
 	{
 		total += sample.pocket_move(rng, infinity, 0);
+
+		for (uint j = 0; j < sample.cfg.bond_occ.size(); j++)
+			if (sample.cfg.bond_occ[j])
+				ofconf << decltype(sample)::bond_t::from_index(j, sample.w) << " ";
+		ofconf << std::endl;
+
 		sample.calculate_energy();
 		TEST_ASSERT2(sample.cfg.clusters_total == 0, sample.cfg.clusters_total);
 
@@ -2450,8 +2510,7 @@ void test_pocket(int w, int h, int skew)
 	std::cout << typeid(Geometry).name() << " pocket test finished with avg length " << total / 300. << std::endl;
 }
 
-template<typename Geometry>
-void test_flips(int w, int h, int skew)
+template <typename Geometry> void test_flips(int w, int h, int skew)
 {
 	std::string geomname = typeid(Geometry).name();
 
@@ -2461,18 +2520,18 @@ void test_flips(int w, int h, int skew)
 	{
 		typename Geometry::vertex_t init_mono;
 
-		if constexpr(Geometry::vertex_t::unit_cell_size() == 1)
+		if constexpr (Geometry::vertex_t::unit_cell_size() == 1)
 		{
 			init_mono = typename Geometry::vertex_t(0, 0);
 		}
 		else
 		{
-			init_mono = typename Geometry::vertex_t(0, 0, (int8_t) s);
+			init_mono = typename Geometry::vertex_t(0, 0, (int8_t)s);
 		}
 
 		const auto& bonds = sample.geom.get_bonds(init_mono);
 
-		for (int b = 0; b < (int) bonds.size(); b++)
+		for (int b = 0; b < (int)bonds.size(); b++)
 		{
 			for (const auto& [flip_vtx, flip_bond] : sample.geom.get_flips(init_mono, b))
 			{
@@ -2480,15 +2539,15 @@ void test_flips(int w, int h, int skew)
 				auto sample_copy = sample;
 
 				for (const auto& vtx : sample.geom.get_vertices(bonds[b]))
-					sample.cfg.vertex_occ[vtx.index(sample.w)]++;
-				sample.cfg.vertex_occ[init_mono.index(sample.w)]--;
-				sample.cfg.vertex_occ[flip_vtx.index(sample.w)]++;
+					sample.cfg.vertex_occ[vtx.index(sample.vertex_w)]++;
+				sample.cfg.vertex_occ[init_mono.index(sample.vertex_w)]--;
+				sample.cfg.vertex_occ[flip_vtx.index(sample.vertex_w)]++;
 
 				for (const auto& vtx : sample.geom.get_vertices(flip_bond))
-					sample_copy.cfg.vertex_occ[vtx.index(sample.w)]++;
+					sample_copy.cfg.vertex_occ[vtx.index(sample.vertex_w)]++;
 
 				TEST_ASSERT2(sample.cfg.vertex_occ == sample_copy.cfg.vertex_occ,
-					geomname << " " << s << " " << b << " " << flip_vtx << " " << flip_bond);
+							 geomname << " " << s << " " << b << " " << flip_vtx << " " << flip_bond);
 			}
 		}
 	}
@@ -2538,8 +2597,7 @@ void test_pocket3()
 	}
 }
 
-template<typename Geometry>
-void test_worm(int w, int h, int skew)
+template <typename Geometry> void test_worm(int w, int h, int skew)
 {
 	SampleInitializer<Geometry> init;
 	Sample<Geometry> sample(w, h, skew);
@@ -2591,8 +2649,7 @@ void test_brickwall()
 	}
 }
 
-template<typename Geometry>
-void test_symmetry(int w, int h, int skew)
+template <typename Geometry> void test_symmetry(int w, int h, int skew)
 {
 	Geometry geom(w, h, skew);
 	using bond_t = typename Geometry::bond_t;
@@ -2603,14 +2660,13 @@ void test_symmetry(int w, int h, int skew)
 		for (int i = 0; i < w; i++)
 			for (int j = 0; j < h; j++)
 				for (int s = 0; s < bond_t::unit_cell_size(); s++)
-					occupancies[geom.apply_symmetry(bond_t(i, j, (int8_t) s), LatticePos(1, 2), d).index(w)] = true;
+					occupancies[geom.apply_symmetry(bond_t(i, j, (int8_t)s), LatticePos(1, 2), d).index(w)] = true;
 
 		TEST_ASSERT(std::find(occupancies.begin(), occupancies.end(), false) == occupancies.end());
 	}
 }
 
-template<typename Geometry>
-void test_all(int w, int h, int skew)
+template <typename Geometry> void test_all(int w, int h, int skew)
 {
 	test_symmetry<Geometry>(w, h, skew);
 	test_flips<Geometry>(w, h, skew);

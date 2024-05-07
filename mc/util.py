@@ -92,12 +92,12 @@ def calculate_moments(data):
     # cm4 = m4 - 4*m1*m3 + 6*m1**2*m2 - 3*m1**4
     return (1, m1, m2, None, m4), (1, 0, cm2)
 
-def gen_colors(curves):
+def gen_colors(curves, cmap="jet"):
     if not isinstance(curves[0], tuple):
         curves = sorted(list(set(curves)))
-        return {curves[i]: matplotlib.colormaps["inferno"](0.8*i/(len(curves)-1) if len(curves)>1 else 1) for i in range(len(curves))}
+        return {curves[i]: matplotlib.colormaps[cmap](0.8*i/(len(curves)-1) if len(curves)>1 else 1) for i in range(len(curves))}
     else:
-        return {curves[i][0]: matplotlib.colormaps["inferno"](0.8*i/(len(curves)-1) if len(curves)>1 else 1) for i in range(len(curves))}
+        return {curves[i][0]: matplotlib.colormaps[cmap](0.8*i/(len(curves)-1) if len(curves)>1 else 1) for i in range(len(curves))}
 
 def parse_positions(l):
     pos = []
@@ -126,7 +126,7 @@ def trimer_coords(x, y, s):
     else:
         return (x + y/2 + 1/2, y * np.sqrt(3)/2 + 1/np.sqrt(3)/2)
 
-def mono_coords(x, y):
+def mono_coords(x, y, _=0):
     return (x + y/2, y * np.sqrt(3)/2)
 
 def dimer_hex_coords(x, y, s):
@@ -395,7 +395,7 @@ def show_worms(ax, positions, w, h):
     print(" ".join(str(("RGB"[loop["color"]], loop["wx"], loop["wy"])) for loop in loops))
 
 
-def show_positions(ax, positions, type="worm", show_monomers=False, color="black", height=None, width=None):
+def show_positions(ax, positions, type="worm", show_monomers=False, color="black", height=None, width=None, draw_triangular_lattice=True):
     def to_rgba(hex, alpha):
         return ((hex >> 16) / 256, ((hex >> 8) & 0xFF) / 256, (hex & 0xFF) / 256, alpha)
 
@@ -413,7 +413,9 @@ def show_positions(ax, positions, type="worm", show_monomers=False, color="black
     if height is None:
         height = max(y for x, y, s in positions)+1
 
-    draw_hexalattice(ax, width, height)
+    if draw_triangular_lattice:
+        draw_hexalattice(ax, width, height)
+
     positions = set(positions)
 
     monomers = set()
@@ -428,6 +430,7 @@ def show_positions(ax, positions, type="worm", show_monomers=False, color="black
     j4lines = []
     brokenj4lines = []
     facecolors = []
+    updownfacecolors = []
     for x, y, s in positions:
         xy = trimer_coords(x, y, s)
         patches.append(mpatches.RegularPolygon(xy, numVertices=3,
@@ -435,6 +438,7 @@ def show_positions(ax, positions, type="worm", show_monomers=False, color="black
                                             orientation=s*np.pi))
         sublattice = (4 * y + 2 * x + s) % 6
         facecolors.append(to_rgba(colors[sublattice], 1))
+        updownfacecolors.append(to_rgba(colors[(sublattice % 2)*3+1], 1))
         
         mono_pos = []
         if s == 0:
@@ -483,6 +487,8 @@ def show_positions(ax, positions, type="worm", show_monomers=False, color="black
         show_worms(ax, positions, width, height)
     elif type == "domain":
         ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors=None, facecolors=facecolors, zorder=-1.2))
+    elif type == "updown":
+        ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors=None, facecolors=updownfacecolors, zorder=-1.2))
     else:
         ax.add_collection(matplotlib.collections.PatchCollection(patches, edgecolors="black", facecolors=color, zorder=1.2))
         ax.add_collection(matplotlib.collections.LineCollection(brokenj4lines, color="orchid", lw=2, ls="-", zorder=2))
@@ -764,7 +770,7 @@ def plot2d(ax, data, log=False, show_dimer=False):
 
     for i in range(data.shape[0]):
         for j in range(data.shape[1]):
-            colors.append(matplotlib.colormaps["viridis"](N(data[i, j])))
+            colors.append(matplotlib.colormaps["magma"](N(data[i, j])))
             if i >= data.shape[0]//2:
                 i -= data.shape[0]
             if j >= data.shape[1]//2:
@@ -775,7 +781,10 @@ def plot2d(ax, data, log=False, show_dimer=False):
     if show_dimer:
         ax.add_patch(mpatches.Rectangle((-0.25, -0.25), 1.5, 0.5, ec=None, fc="white", zorder=1))
 
-    plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
+    ax.set_xlabel("$x$")
+    ax.set_ylabel("$y$")
+
+    plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="magma"), ax=ax)
 
 def plot2d_hex(ax, data, title=None):
     ax.axis("off")
@@ -799,6 +808,10 @@ def plot2d_hex(ax, data, title=None):
                 patches.append(matplotlib.patches.RegularPolygon(trimer_coords(i, j, k), numVertices=3, radius=1/np.sqrt(3), orientation=k*np.pi))
 
     ax.add_collection(matplotlib.collections.PatchCollection(patches, facecolors=colors))
+
+    ax.set_xlabel("$x$")
+    ax.set_ylabel("$y$")
+
     plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
     plt.title(title)
 
@@ -833,7 +846,7 @@ def plot2d_hexdimer(ax, data, title=None, skew=False):
     plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
     plt.title(title)
 
-def FT(vals, coords=trimer_coords, double=False, matrix=False):
+def FT(vals, coords=trimer_coords, matrix=False):
     newvals = []
     newx = []
     newy = []
@@ -850,10 +863,7 @@ def FT(vals, coords=trimer_coords, double=False, matrix=False):
             s1 = s % sqrts
 
         x0 = coords(0, 0, s0)
-        if double:
-            xy = coords(x-vals.shape[0]//2, y-vals.shape[1]//2, s1)
-        else:
-            xy = coords(x, y, s1)
+        xy = coords(x, y, s1)
 
         xy = xy[0]-x0[0], xy[1]-x0[1]
 
@@ -862,17 +872,11 @@ def FT(vals, coords=trimer_coords, double=False, matrix=False):
             newy.append(xy[1])
             newvals.append(vals[x%vals.shape[0], y%vals.shape[1], s] * np.exp(-(xy[0]**2+xy[1]**2)/(2*radius**2)))
 
-    if double:
-        for i in range(vals.shape[0]):
-            for j in range(vals.shape[1]):
-                for s in range(vals.shape[2]):
-                    add(i, j, s)
-    else:
-        bounding = int(vals.shape[0]*2.5)
-        for i in range(bounding):
-            for j in range(bounding):
-                for s in range(vals.shape[2]):
-                    add(i-bounding//2, j-bounding//2, s)
+    bounding = int(vals.shape[0]*2.5)
+    for i in range(bounding):
+        for j in range(bounding):
+            for s in range(vals.shape[2]):
+                add(i-bounding//2, j-bounding//2, s)
 
     newx = np.array(newx)
     newy = np.array(newy)
@@ -976,7 +980,10 @@ def plot_FT(ax, ft, proj="re", fold=True, vmax=None, res=75, extent=2.5):
     ax.text(0, 0.1, "$\\Gamma$", color="w", horizontalalignment="center", size=13).set_clip_on(True)
     ax.text(4/3, 0.1, "$K$", color="w", size=13).set_clip_on(True)
     ax.text(-4/3, 0.1, "$K'$", horizontalalignment="right", color="w", size=13).set_clip_on(True)
-    ax.text(0, 1.25, "$M$", horizontalalignment="center", color="w", size=13).set_clip_on(True)
+    # ax.text(0, 1.25, "$M$", horizontalalignment="center", color="w", size=13).set_clip_on(True)
+    ax.set_xlabel("$\\pi k_x$", fontsize=12)
+    ax.set_ylabel("$\\pi k_y$", fontsize=12)
+
     plt.colorbar(matplotlib.cm.ScalarMappable(norm, cmap=cmap), ax=ax)
 
 def plot_timeseries(ax, data, std, label=None):
