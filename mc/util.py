@@ -168,6 +168,29 @@ def draw_hexalattice(ax, width, height, color=None, ls="-"):
         [(vertices[x], vertices[y]) for x, y in lines], color=color, lw=1, ls=ls, zorder=0.5))
 
 
+def draw_duallattice(ax, width, height, color=None, ls="-"):
+    if color is None:
+        color = "black"
+
+    R = 1 / np.sqrt(3)
+
+    for x in range(-1, width):
+        for y in range(-1, height):
+            xy = trimer_coords(x, y, 1)
+            xy = (xy[0] - R * np.sqrt(3) / 2, xy[1] + R / 2)
+            ax.add_patch(mpatches.RegularPolygon(xy, numVertices=6, radius=R,
+                         zorder=-0.5, lw=1, fill=False, edgecolor=color, ls=ls))
+
+    xy = trimer_coords(0, 0, 1)
+    xy = (xy[0] - R * np.sqrt(3) / 2, xy[1] + R / 2)
+    ax.plot([xy[0] + R*np.sqrt(3)/2, xy[0] + R*np.sqrt(3)],
+            [xy[1] + R/2, xy[1] + R], color=color, lw=1, zorder=-0.5)
+    xy = trimer_coords(width - 1, height - 1, 1)
+    xy = (xy[0] - R * np.sqrt(3) / 2, xy[1] + R / 2)
+    ax.plot([xy[0] + R*np.sqrt(3)/2, xy[0] + R*np.sqrt(3)],
+            [xy[1] + R/2, xy[1] + R], color=color, lw=1, zorder=-0.5)
+
+
 def enum_starofdavid(mono_pos, w, h):
     x, y = mono_pos
     l = [
@@ -753,7 +776,7 @@ def bin(data, width):
         data = np.array(data)
     return data[:(data.size // width) * width].reshape(-1, width).mean(axis=1)
 
-def plot2d(ax, data, log=False, show_dimer=False):
+def plot2d(ax, data, log=False, show_dimer=False, vmax=None):
     ax.axis("off")
     ax.set_xlim([-25, 25])
     ax.set_ylim([-15, 15])
@@ -762,11 +785,14 @@ def plot2d(ax, data, log=False, show_dimer=False):
     patches = []
     colors = []
 
+    if vmax is None:
+        vmax = np.amax(data)
+
     if log:
         data = data + 0.000001
-        N = matplotlib.colors.LogNorm(vmin=np.amin(data), vmax=np.amax(data))
+        N = matplotlib.colors.LogNorm(vmin=np.amin(data), vmax=vmax)
     else:
-        N = matplotlib.colors.Normalize(vmin=np.min(data), vmax=np.max(data))
+        N = matplotlib.colors.Normalize(vmin=np.min(data), vmax=vmax)
 
     for i in range(data.shape[0]):
         for j in range(data.shape[1]):
@@ -781,8 +807,8 @@ def plot2d(ax, data, log=False, show_dimer=False):
     if show_dimer:
         ax.add_patch(mpatches.Rectangle((-0.25, -0.25), 1.5, 0.5, ec=None, fc="white", zorder=1))
 
-    ax.set_xlabel("$x$")
-    ax.set_ylabel("$y$")
+    ax.set_xlabel("$x$ (lattice constants)")
+    ax.set_ylabel("$y$ (lattice constants)")
 
     plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="magma"), ax=ax)
 
@@ -845,6 +871,25 @@ def plot2d_hexdimer(ax, data, title=None, skew=False):
     ax.add_collection(matplotlib.collections.PatchCollection(patches, facecolors=colors))
     plt.colorbar(matplotlib.cm.ScalarMappable(norm=N, cmap="viridis"), ax=ax)
     plt.title(title)
+
+def FTpos(pos):
+    newx = []
+    newy = []
+
+    def add(x, y, s):
+        x0 = trimer_coords(x, y, s)
+        newx.append(x0[0])
+        newy.append(x0[1])
+
+    for p in pos:
+        add(*p)
+
+    newx = np.array(newx)
+    newy = np.array(newy)
+
+    def corr(k):
+        return np.sum(np.exp(-1j * (newx * k[0] * np.pi + newy * k[1] * np.pi)))
+    return corr
 
 def FT(vals, coords=trimer_coords, matrix=False):
     newvals = []
@@ -915,7 +960,7 @@ def make_coords(extent):
 
             coords[extent][x, y] = [xy[0], xy[1]]
 
-def plot_FT(ax, ft, proj="re", fold=True, vmax=None, res=75, extent=2.5):
+def plot_FT(ax, ft, proj="re", fold=True, vmax=None, res=75, extent=2.5, draw_extra=True):
     if not isinstance(extent, tuple):
         extent = (-extent, extent, -extent, extent)
 
@@ -974,13 +1019,15 @@ def plot_FT(ax, ft, proj="re", fold=True, vmax=None, res=75, extent=2.5):
 
 
     ax.imshow(mapped.T, origin="lower", extent=extent, cmap=cmap, norm=norm)
-    ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="w", alpha=0.5, lw=1))
-    ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="w", orientation=np.pi/6, alpha=0.5, lw=1))
     ax.grid(False)
+    ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/3, fill=None, ec="w", orientation=np.pi/6, alpha=0.5, lw=1))
     ax.text(0, 0.1, "$\\Gamma$", color="w", horizontalalignment="center", size=13).set_clip_on(True)
-    ax.text(4/3, 0.1, "$K$", color="w", size=13).set_clip_on(True)
-    ax.text(-4/3, 0.1, "$K'$", horizontalalignment="right", color="w", size=13).set_clip_on(True)
+    if draw_extra:
+        ax.text(4/3, 0.1, "$K$", color="w", size=13).set_clip_on(True)
+        ax.text(-4/3, 0.1, "$K'$", horizontalalignment="right", color="w", size=13).set_clip_on(True)
+        ax.add_patch(mpatches.RegularPolygon((0, 0), 6, radius=4/np.sqrt(3), fill=None, ec="w", alpha=0.5, lw=1))
     # ax.text(0, 1.25, "$M$", horizontalalignment="center", color="w", size=13).set_clip_on(True)
+
     ax.set_xlabel("$\\pi k_x$", fontsize=12)
     ax.set_ylabel("$\\pi k_y$", fontsize=12)
 

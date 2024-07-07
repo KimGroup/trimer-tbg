@@ -83,6 +83,7 @@ struct Options
 	bool metropolis = false;
 	bool init_random = false;
 
+	double heating_run = 0;
 	bool multicanonical = false;
 	int multicanonical_rounds = 10;
 	int multicanonical_round_length = 100000;
@@ -352,8 +353,6 @@ template <typename Geometry> struct Sample
 			cfg.vertex_occ[i.index(vertex_w)]--;
 		}
 
-		std::cout << "begin" << std::endl;
-
 		int length = 0;
 		while (_pocket.size() > 0)
 		{
@@ -362,7 +361,6 @@ template <typename Geometry> struct Sample
 			_pocket.pop_back();
 
 			auto moved = geom.apply_symmetry(el, symc, syma);
-			std::cout << el << " " << moved << std::endl;
 
 			_Abar.push_back(moved);
 
@@ -897,13 +895,12 @@ template <typename BoundaryCondition> struct Observer<TrimerTriangularGeometry<B
 		double structure_factor_K;
 		double structure_factor_K1;
 		double structure_factor_K2;
+		double structure_factor_M;
 		int sublattice_polarization;
 	};
 
-	Observables record_order_parameters(const sample_t& sample, Accumulator<double>& acc)
+	Observables calculate_order_parameters(const sample_t& sample)
 	{
-		std::vector<double> vals(11);
-
 		const double rt3 = std::sqrt(3.);
 		const double Kpx0 = 4. / 3, Kpy0 = 0;
 		// const double Kpx1 = -2. / 3, Kpy1 = 2 * rt3 / 3;
@@ -931,7 +928,7 @@ template <typename BoundaryCondition> struct Observer<TrimerTriangularGeometry<B
 					if (pos.s == 1)
 					{
 						x += 0.5;
-						y += 2 / rt3;
+						y += 1 / rt3 / 2;
 					}
 
 					double dot = (x * Mpx0 + y * Mpy0) * M_PI;
@@ -961,24 +958,30 @@ template <typename BoundaryCondition> struct Observer<TrimerTriangularGeometry<B
 			}
 		}
 
-		vals[0] = (std::abs(M0) + std::abs(M1) + std::abs(M2)) / 3.;
+		return Observables{std::abs(K0), std::abs(K1), std::abs(K2), (std::abs(M0) + std::abs(M1) + std::abs(M2)) / 3.,
+						   std::abs(AmB)};
+	}
+
+	void record_order_parameters(const Observables& obs, Accumulator<double>& acc)
+	{
+		std::vector<double> vals(11);
+
+		vals[0] = obs.structure_factor_M;
 		vals[1] = vals[0] * vals[0];
 		vals[2] = vals[1] * vals[1];
 
-		vals[3] = std::abs(K0);
+		vals[3] = obs.structure_factor_K;
 		vals[4] = vals[3] * vals[3];
 		vals[5] = vals[4] * vals[4];
 
-		vals[6] = std::abs(K1);
-		vals[7] = std::abs(K2);
+		vals[6] = obs.structure_factor_K1;
+		vals[7] = obs.structure_factor_K2;
 
-		vals[8] = std::abs(AmB);
+		vals[8] = obs.sublattice_polarization;
 		vals[9] = vals[8] * vals[8];
 		vals[10] = vals[9] * vals[9];
 
 		acc.record(vals);
-
-		return Observables{std::abs(K0), std::abs(K1), std::abs(K2), AmB};
 	}
 
 	template <typename Rng>
@@ -1518,6 +1521,7 @@ template <typename Geometry> struct PTWorker
 	std::ofstream ofhistogram;
 	std::ofstream ofsector;
 	std::ofstream ofconf;
+	std::ofstream ofheating;
 
 	Accumulator<double> amonomono;
 	Accumulator<double> aclustercount;
@@ -1615,6 +1619,7 @@ template <typename Geometry> struct PTWorker
 			ofhistogram = std::ofstream(basepath / "histogram.dat", std::ios::binary);
 			ofsector = std::ofstream(basepath / "winding-histogram.dat", std::ios::binary);
 			ofconf = std::ofstream(basepath / "positions.dat");
+			ofheating = std::ofstream(basepath / "heating.dat");
 
 			amonomono = Accumulator<double>(options.domain_w * options.domain_h, options.accumulator_interval);
 			aorder = Accumulator<double>(11, options.accumulator_interval);
@@ -1629,7 +1634,7 @@ template <typename Geometry> struct PTWorker
 	{
 		auto begin = std::chrono::high_resolution_clock::now();
 
-		double j4 = temperature == 0 && options.u < infinity ? 0 : options.j4 / temperature;
+		double j4 = options.j4 / temperature;
 		double u = options.u / temperature;
 
 		std::uniform_real_distribution<> uniform(0., 1.);
@@ -1701,6 +1706,9 @@ template <typename Geometry> struct PTWorker
 			typename Observer<Geometry>::Observables ordervals;
 			double energy = 0;
 
+			if (options.out_order || options.out_histogram || options.heating_run != 0)
+				ordervals = obs.calculate_order_parameters(sample);
+
 			if (options.out_monomono)
 				obs.record_partial_monomer_correlations(sample, amonomono, rng, 10);
 			if (options.out_clustercount)
@@ -1712,7 +1720,7 @@ template <typename Geometry> struct PTWorker
 			if (options.out_energy)
 				energy = obs.record_energy(sample, aenergy, options.u, options.j4);
 			if (options.out_order)
-				ordervals = obs.record_order_parameters(sample, aorder);
+				obs.record_order_parameters(ordervals, aorder);
 
 			auto end2 = std::chrono::high_resolution_clock::now();
 
@@ -1738,6 +1746,12 @@ template <typename Geometry> struct PTWorker
 				write_binary<float>(ofhistogram, (float)ordervals.structure_factor_K);
 				write_binary<int32_t>(ofhistogram, ordervals.sublattice_polarization);
 				ofhistogram.flush();
+			}
+
+			if (options.heating_run != 0)
+			{
+				ofheating << temperature << ";" << ordervals.structure_factor_M << std::endl;
+				ofheating.flush();
 			}
 
 			if (options.out_winding_histogram)
@@ -1919,6 +1933,11 @@ template <typename Geometry = TrimerTriangularGeometry<>> struct PTEnsemble
 			auto end = std::chrono::high_resolution_clock::now();
 
 			timings[1] = (double)std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
+		}
+
+		if (options.heating_run != 0)
+		{
+			chains[0].temperature += options.heating_run;
 		}
 
 		steps_done += options.decorr_interval * options.swap_interval;
@@ -2389,6 +2408,11 @@ void sim(int argc, char** argv)
 	options.adaptive_pt = optstring.find('A') != std::string::npos;
 	options.init_random = optstring.find('R') != std::string::npos;
 	options.domain_open_bc = optstring.find('O') != std::string::npos;
+
+	if (optstring.find('T') != std::string::npos)
+		options.heating_run = 0.00001;
+	if (optstring.find('N') != std::string::npos)
+		options.heating_run = -0.00001;
 
 	options.multicanonical = optstring.find('C') != std::string::npos;
 	options.multicanonical_round_length = options.total_steps;

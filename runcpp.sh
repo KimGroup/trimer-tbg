@@ -3,17 +3,87 @@
 #SBATCH --mem-per-cpu=1G
 #SBATCH --time=2-0
 #SBATCH --cpus-per-task=1
-#SBATCH --ntasks=2
+#SBATCH --ntasks=7
 
-# srun --exclusive -n 1 ./pocket 48 48 0.01 0.01 20000000 20 tOR 10000 openbc/0.01o &
-# srun --exclusive -n 1 ./pocket 48 1 0.01 0.01 20000000 20 tR 10000 openbc/0.01p &
-# srun --exclusive -n 1 ./pocket 48 48 0.01 0.01 20000000 20 tR 10000 openbc/0.01p &
-# srun --exclusive -n 1 ./pocket 48 1 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
-# srun --exclusive -n 1 ./pocket 48 48 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
-# srun --exclusive -n 1 ./pocket 48 96 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
-# srun --exclusive -n 1 ./pocket 48 144 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
-srun --exclusive -n 1 ./pocket 48 192 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
-srun --exclusive -n 1 ./pocket 48 240 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1p &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.05 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 36 0 -0.1 0.05 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 48 0 -0.1 0.05 20000000 20 oT 10000 heating & 
+# srun --exclusive -n 1 ./pocket 60 0 -0.1 0.05 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 72 0 -0.1 0.05 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 84 0 -0.1 0.05 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 96 0 -0.1 0.05 20000000 20 oT 10000 heating &
+
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.20 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 36 0 -0.1 0.20 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 48 0 -0.1 0.20 20000000 20 oNR 10000 cooling & 
+# srun --exclusive -n 1 ./pocket 60 0 -0.1 0.20 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 72 0 -0.1 0.20 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 84 0 -0.1 0.20 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 96 0 -0.1 0.20 20000000 20 oNR 10000 cooling &
+
+# srun --exclusive -n 1 ./pocket 24 0 -0.2 0.1 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 36 0 -0.2 0.1 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 48 0 -0.2 0.1 20000000 20 oT 10000 heating & 
+# srun --exclusive -n 1 ./pocket 60 0 -0.2 0.1 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 72 0 -0.2 0.1 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 84 0 -0.2 0.1 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 96 0 -0.2 0.1 20000000 20 oT 10000 heating &
+
+# srun --exclusive -n 1 ./pocket 24 0 -0.2 0.18 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 36 0 -0.2 0.18 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 48 0 -0.2 0.18 20000000 20 oNR 10000 cooling & 
+# srun --exclusive -n 1 ./pocket 60 0 -0.2 0.18 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 72 0 -0.2 0.18 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 84 0 -0.2 0.18 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 96 0 -0.2 0.18 20000000 20 oNR 10000 cooling &
+
+# srun --exclusive -n 1 ./pocket 24 0 -0.3 0.15 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 36 0 -0.3 0.15 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 48 0 -0.3 0.15 20000000 20 oT 10000 heating & 
+# srun --exclusive -n 1 ./pocket 60 0 -0.3 0.15 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 72 0 -0.3 0.15 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 84 0 -0.3 0.15 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 96 0 -0.3 0.15 20000000 20 oT 10000 heating &
+
+# srun --exclusive -n 1 ./pocket 24 0 -0.3 0.23 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 36 0 -0.3 0.23 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 48 0 -0.3 0.23 20000000 20 oNR 10000 cooling & 
+# srun --exclusive -n 1 ./pocket 60 0 -0.3 0.23 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 72 0 -0.3 0.23 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 84 0 -0.3 0.23 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 96 0 -0.3 0.23 20000000 20 oNR 10000 cooling &
+
+# srun --exclusive -n 1 ./pocket 24 0 -0.5 0.25 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 36 0 -0.5 0.25 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 48 0 -0.5 0.25 20000000 20 oT 10000 heating & 
+# srun --exclusive -n 1 ./pocket 60 0 -0.5 0.25 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 72 0 -0.5 0.25 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 84 0 -0.5 0.25 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 96 0 -0.5 0.25 20000000 20 oT 10000 heating &
+
+# srun --exclusive -n 1 ./pocket 24 0 -0.5 0.29 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 36 0 -0.5 0.29 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 48 0 -0.5 0.29 20000000 20 oNR 10000 cooling & 
+# srun --exclusive -n 1 ./pocket 60 0 -0.5 0.29 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 72 0 -0.5 0.29 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 84 0 -0.5 0.29 20000000 20 oNR 10000 cooling &
+# srun --exclusive -n 1 ./pocket 96 0 -0.5 0.29 20000000 20 oNR 10000 cooling &
+
+# srun --exclusive -n 1 ./pocket 24 0 -1 0.35 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 36 0 -1 0.35 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 48 0 -1 0.35 20000000 20 oT 10000 heating & 
+# srun --exclusive -n 1 ./pocket 60 0 -1 0.35 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 72 0 -1 0.35 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 84 0 -1 0.35 20000000 20 oT 10000 heating &
+# srun --exclusive -n 1 ./pocket 96 0 -1 0.35 20000000 20 oT 10000 heating &
+
+srun --exclusive -n 1 ./pocket 24 0 -2 0.55 20000000 20 oT 10000 heating &
+srun --exclusive -n 1 ./pocket 36 0 -2 0.55 20000000 20 oT 10000 heating &
+srun --exclusive -n 1 ./pocket 48 0 -2 0.55 20000000 20 oT 10000 heating & 
+srun --exclusive -n 1 ./pocket 60 0 -2 0.55 20000000 20 oT 10000 heating &
+srun --exclusive -n 1 ./pocket 72 0 -2 0.55 20000000 20 oT 10000 heating &
+srun --exclusive -n 1 ./pocket 84 0 -2 0.55 20000000 20 oT 10000 heating &
+srun --exclusive -n 1 ./pocket 96 0 -2 0.55 20000000 20 oT 10000 heating &
 
 # srun --exclusive -n 1 ./pocket 24 0 2 0.5 50000000 20 htR 30000 slp &
 # srun --exclusive -n 1 ./pocket 36 0 2 0.5 50000000 20 htR 30000 slp &
@@ -217,18 +287,19 @@ srun --exclusive -n 1 ./pocket 48 240 -0.1 0.01 20000000 20 tR 10000 openbc/-0.1
 # srun --exclusive -n 1 ./pocket 12 0 0.1 0.245 20000000 20 etc 10000 vsweeps/rough/0.1 &
 # srun --exclusive -n 1 ./pocket 12 0 0.1 0.25 20000000 20 etc 10000 vsweeps/rough/0.1 &
 
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.030 20000000 20 etco 10000 vsweeps/rough/-0.1/bw &
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.032 20000000 20 etco 10000 vsweeps/rough/-0.1/bw &
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.034 20000000 20 etco 10000 vsweeps/rough/-0.1/bw &
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.036 20000000 20 etco 10000 vsweeps/rough/-0.1/bw &
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.038 20000000 20 etco 10000 vsweeps/rough/-0.1/bw &
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.040 20000000 20 etco 10000 vsweeps/rough/-0.1/bw &
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.030 20000000 20 etcoR 10000 vsweeps/rough/-0.1/rand &
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.032 20000000 20 etcoR 10000 vsweeps/rough/-0.1/rand &
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.034 20000000 20 etcoR 10000 vsweeps/rough/-0.1/rand &
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.036 20000000 20 etcoR 10000 vsweeps/rough/-0.1/rand &
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.038 20000000 20 etcoR 10000 vsweeps/rough/-0.1/rand &
-# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.040 20000000 20 etcoR 10000 vsweeps/rough/-0.1/rand &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.030 20000000 20 etco 10000 vsweeps/rough/-0.1b/bw &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.032 20000000 20 etco 10000 vsweeps/rough/-0.1b/bw &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.034 20000000 20 etco 10000 vsweeps/rough/-0.1b/bw &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.036 20000000 20 etco 10000 vsweeps/rough/-0.1b/bw &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.038 20000000 20 etco 10000 vsweeps/rough/-0.1b/bw &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.040 20000000 20 etco 10000 vsweeps/rough/-0.1b/bw &
+
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.030 20000000 20 etcoR 10000 vsweeps/rough/-0.1b/rand &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.032 20000000 20 etcoR 10000 vsweeps/rough/-0.1b/rand &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.034 20000000 20 etcoR 10000 vsweeps/rough/-0.1b/rand &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.036 20000000 20 etcoR 10000 vsweeps/rough/-0.1b/rand &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.038 20000000 20 etcoR 10000 vsweeps/rough/-0.1b/rand &
+# srun --exclusive -n 1 ./pocket 24 0 -0.1 0.040 20000000 20 etcoR 10000 vsweeps/rough/-0.1b/rand &
 
 # srun --exclusive -n 1 ./pocket 48 0 0.01 0.1 20000000 20 etcoR 10000 hsweeps/0.1 &
 # srun --exclusive -n 1 ./pocket 48 0 0.008 0.1 20000000 20 etcoR 10000 hsweeps/0.1 &

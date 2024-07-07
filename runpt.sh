@@ -3,7 +3,25 @@
 #SBATCH --mem-per-cpu=1G
 #SBATCH --time=2-0
 #SBATCH --cpus-per-task=16
-#SBATCH --ntasks=8
+#SBATCH --ntasks=9
+
+# srun --exclusive -n 1 -c 16 ./pocket 24 1 0.01 0.02:16:0.12 40000000 20 oAR 40000 pto/0.01b/rand &
+# srun --exclusive -n 1 -c 16 ./pocket 24 1 0.01 0.02:16:0.12 40000000 20 oA 40000 pto/0.01b/ord &
+# srun --exclusive -n 1 -c 16 ./pocket 36 1 0.01 0.02:16:0.12 40000000 20 oAR 40000 pto/0.01b/rand &
+# srun --exclusive -n 1 -c 16 ./pocket 36 1 0.01 0.02:16:0.12 40000000 20 oA 40000 pto/0.01b/ord &
+# srun --exclusive -n 1 -c 16 ./pocket 48 1 0.01 0.02:16:0.12 40000000 20 oAR 40000 pto/0.01b/rand &
+# srun --exclusive -n 1 -c 16 ./pocket 48 1 0.01 0.02:16:0.12 40000000 20 oA 40000 pto/0.01b/ord &
+# srun --exclusive -n 1 -c 16 ./pocket 60 1 0.01 0.02:16:0.12 40000000 20 oAR 40000 pto/0.01b/rand &
+# srun --exclusive -n 1 -c 16 ./pocket 60 1 0.01 0.02:16:0.12 40000000 20 oA 40000 pto/0.01b/ord &
+
+# srun --exclusive -n 1 -c 16 ./pocket 24 1 -0.1 0.02:16:0.12 40000000 20 oAR 40000 pto/-0.1/rand &
+# srun --exclusive -n 1 -c 16 ./pocket 24 1 -0.1 0.02:16:0.12 40000000 20 oA 40000 pto/-0.1/ord &
+# srun --exclusive -n 1 -c 16 ./pocket 36 1 -0.1 0.02:16:0.12 40000000 20 oAR 40000 pto/-0.1/rand &
+# srun --exclusive -n 1 -c 16 ./pocket 36 1 -0.1 0.02:16:0.12 40000000 20 oA 40000 pto/-0.1/ord &
+# srun --exclusive -n 1 -c 16 ./pocket 48 1 -0.1 0.02:16:0.12 40000000 20 oAR 40000 pto/-0.1/rand &
+# srun --exclusive -n 1 -c 16 ./pocket 48 1 -0.1 0.02:16:0.12 40000000 20 oA 40000 pto/-0.1/ord &
+# srun --exclusive -n 1 -c 16 ./pocket 60 1 -0.1 0.02:16:0.12 40000000 20 oAR 40000 pto/-0.1/rand &
+# srun --exclusive -n 1 -c 16 ./pocket 60 1 -0.1 0.02:16:0.12 40000000 20 oA 40000 pto/-0.1/ord &
 
 # srun --exclusive -n 1 -c 16 ./pocket 24 1 -1 1.5:16:9 40000000 20 hmtRI 40000 infinite-u/pt/ &
 # srun --exclusive -n 1 -c 16 ./pocket 36 1 -1 1.5:16:9 40000000 20 hmtRI 40000 infinite-u/pt/ &
@@ -71,15 +89,15 @@
 # srun --exclusive -n 1 -c 16 ./pocket 108 0 0.4 0.295:16:0.32 40000000 5 chAR 15000 vsweeps/binder-tri/0.4/ &
 # srun --exclusive -n 1 -c 16 ./pocket 120 0 0.4 0.295:16:0.32 40000000 5 chAR 15000 vsweeps/binder-tri/0.4/ &
 
-srun --exclusive -n 1 -c 16 ./pocket 24 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
-srun --exclusive -n 1 -c 16 ./pocket 36 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
-srun --exclusive -n 1 -c 16 ./pocket 48 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
-srun --exclusive -n 1 -c 16 ./pocket 60 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
-srun --exclusive -n 1 -c 16 ./pocket 72 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
-srun --exclusive -n 1 -c 16 ./pocket 84 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
-srun --exclusive -n 1 -c 16 ./pocket 96 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
-srun --exclusive -n 1 -c 16 ./pocket 108 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
-srun --exclusive -n 1 -c 16 ./pocket 120 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
+# srun --exclusive -n 1 -c 16 ./pocket 24 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
+# srun --exclusive -n 1 -c 16 ./pocket 36 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
+# srun --exclusive -n 1 -c 16 ./pocket 48 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
+# srun --exclusive -n 1 -c 16 ./pocket 60 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
+# srun --exclusive -n 1 -c 16 ./pocket 72 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
+# srun --exclusive -n 1 -c 16 ./pocket 84 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
+# srun --exclusive -n 1 -c 16 ./pocket 96 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
+# srun --exclusive -n 1 -c 16 ./pocket 108 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
+# srun --exclusive -n 1 -c 16 ./pocket 120 0 0.35 0.285:16:0.31 40000000 5 chAR 30000 vsweeps/binder-tri/0.35/ &
 
 # srun --exclusive -n 1 -c 16 ./pocket 24 0 0.5 0.3125:16:0.335 40000000 15 chAR 15000 vsweeps/binder/0.5c/ &
 # srun --exclusive -n 1 -c 16 ./pocket 36 0 0.5 0.3125:16:0.33 40000000 15 chAR 15000 vsweeps/binder/0.5c/ &
@@ -149,24 +167,24 @@ srun --exclusive -n 1 -c 16 ./pocket 120 0 0.35 0.285:16:0.31 40000000 5 chAR 30
 # srun --exclusive -n 1 -c 16 ./pocket 84 0 1.5 0.55:16:0.67 20000000 15 chAR 15000 vsweeps/binder-slp/1.5/ &
 # srun --exclusive -n 1 -c 16 ./pocket 96 0 1.5 0.55:16:0.65 20000000 15 chAR 15000 vsweeps/binder-slp/1.5/ &
 
-# srun --exclusive -n 1 -c 16 ./pocket 24 0 2 0.32:16:0.36 40000000 15 chAR 15000 vsweeps/binder/2b &
-# srun --exclusive -n 1 -c 16 ./pocket 36 0 2 0.32:16:0.355 40000000 15 chAR 15000 vsweeps/binder/2b &
-# srun --exclusive -n 1 -c 16 ./pocket 48 0 2 0.32:16:0.35 40000000 15 chAR 15000 vsweeps/binder/2b &
-# srun --exclusive -n 1 -c 16 ./pocket 60 0 2 0.32:16:0.348 40000000 15 chAR 15000 vsweeps/binder/2b &
-# srun --exclusive -n 1 -c 16 ./pocket 72 0 2 0.32:16:0.346 40000000 15 chAR 15000 vsweeps/binder/2b &
-# srun --exclusive -n 1 -c 16 ./pocket 84 0 2 0.32:16:0.345 40000000 15 chAR 15000 vsweeps/binder/2b &
-# srun --exclusive -n 1 -c 16 ./pocket 96 0 2 0.32:16:0.345 40000000 15 chAR 15000 vsweeps/binder/2b &
-# srun --exclusive -n 1 -c 16 ./pocket 108 0 2 0.32:16:0.3445 40000000 15 chAR 15000 vsweeps/binder/2b &
-# srun --exclusive -n 1 -c 16 ./pocket 120 0 2 0.32:16:0.344 40000000 15 chAR 15000 vsweeps/binder/2b &
+# srun --exclusive -n 1 -c 16 ./pocket 24 0 2 0.32:16:0.36 40000000 15 chAR 15000 vsweeps/binder/2c &
+# srun --exclusive -n 1 -c 16 ./pocket 36 0 2 0.32:16:0.355 40000000 15 chAR 15000 vsweeps/binder/2c &
+# srun --exclusive -n 1 -c 16 ./pocket 48 0 2 0.32:16:0.35 40000000 15 chAR 15000 vsweeps/binder/2c &
+# srun --exclusive -n 1 -c 16 ./pocket 60 0 2 0.32:16:0.348 40000000 15 chAR 15000 vsweeps/binder/2c &
+# srun --exclusive -n 1 -c 16 ./pocket 72 0 2 0.32:16:0.346 40000000 15 chAR 15000 vsweeps/binder/2c &
+# srun --exclusive -n 1 -c 16 ./pocket 84 0 2 0.32:16:0.345 40000000 15 chAR 15000 vsweeps/binder/2c &
+# srun --exclusive -n 1 -c 16 ./pocket 96 0 2 0.32:16:0.345 40000000 15 chAR 15000 vsweeps/binder/2c &
+# srun --exclusive -n 1 -c 16 ./pocket 108 0 2 0.32:16:0.3445 40000000 15 chAR 15000 vsweeps/binder/2c &
+# srun --exclusive -n 1 -c 16 ./pocket 120 0 2 0.32:16:0.344 40000000 15 chAR 15000 vsweeps/binder/2c &
 
-# srun --exclusive -n 1 -c 16 ./pocket 24 0 2 0.57:16:0.86 40000000 15 chAR 15000 vsweeps/binder-slp/2b/ &
-# srun --exclusive -n 1 -c 16 ./pocket 36 0 2 0.57:16:0.86 40000000 15 chAR 15000 vsweeps/binder-slp/2b/ &
-# srun --exclusive -n 1 -c 16 ./pocket 48 0 2 0.57:16:0.82 40000000 15 chAR 15000 vsweeps/binder-slp/2b/ &
-# srun --exclusive -n 1 -c 16 ./pocket 60 0 2 0.58:16:0.80 40000000 15 chAR 15000 vsweeps/binder-slp/2b/ &
-# srun --exclusive -n 1 -c 16 ./pocket 72 0 2 0.58:16:0.78 40000000 15 chAR 15000 vsweeps/binder-slp/2b/ &
-# srun --exclusive -n 1 -c 16 ./pocket 84 0 2 0.58:16:0.76 40000000 15 chAR 15000 vsweeps/binder-slp/2b/ &
-# srun --exclusive -n 1 -c 16 ./pocket 96 0 2 0.58:16:0.74 40000000 15 chAR 15000 vsweeps/binder-slp/2b/ &
-# srun --exclusive -n 1 -c 16 ./pocket 108 0 2 0.58:16:0.72 40000000 15 chAR 15000 vsweeps/binder-slp/2b/ &
-# srun --exclusive -n 1 -c 16 ./pocket 120 0 2 0.58:16:0.71 40000000 15 chAR 15000 vsweeps/binder-slp/2b/ &
+srun --exclusive -n 1 -c 16 ./pocket 24 0 2 0.57:16:0.94 40000000 15 chAR 15000 vsweeps/binder-slp/2e/ &
+srun --exclusive -n 1 -c 16 ./pocket 36 0 2 0.57:16:0.90 40000000 15 chAR 15000 vsweeps/binder-slp/2e/ &
+srun --exclusive -n 1 -c 16 ./pocket 48 0 2 0.57:16:0.88 40000000 15 chAR 15000 vsweeps/binder-slp/2e/ &
+srun --exclusive -n 1 -c 16 ./pocket 60 0 2 0.58:16:0.86 40000000 15 chAR 15000 vsweeps/binder-slp/2e/ &
+srun --exclusive -n 1 -c 16 ./pocket 72 0 2 0.58:16:0.84 40000000 15 chAR 15000 vsweeps/binder-slp/2e/ &
+srun --exclusive -n 1 -c 16 ./pocket 84 0 2 0.58:16:0.82 40000000 15 chAR 15000 vsweeps/binder-slp/2e/ &
+srun --exclusive -n 1 -c 16 ./pocket 96 0 2 0.58:16:0.80 40000000 15 chAR 15000 vsweeps/binder-slp/2e/ &
+srun --exclusive -n 1 -c 16 ./pocket 108 0 2 0.58:16:0.78 40000000 15 chAR 15000 vsweeps/binder-slp/2e/ &
+srun --exclusive -n 1 -c 16 ./pocket 120 0 2 0.58:16:0.76 40000000 15 chAR 15000 vsweeps/binder-slp/2e/ &
 
 wait
