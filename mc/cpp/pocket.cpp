@@ -1,3 +1,60 @@
+/**
+ * Usage:
+ * ./pocket DomainLength TrimerVacancies J4 Temperature NumSteps BatchSize \
+ * 			[options] OutputInterval OutputFolder
+ *
+ * Recommended values/ranges in [brackets]
+ * DomainLength [24-120]: NxNx2 honeycomb lattice
+ * TrimerVacancies [0-1]: number of trimers to remove
+ * J4: J4/U
+ * Temperature: T/U
+ * NumSteps [>1e7]: # of MC steps
+ * BatchSize [20]: # of steps per MC batch (measurements performed once per batch)
+ * OutputInterval: # of MC steps between each output of observables
+ * OutputFolder: output folder that doesn't exist
+ *
+ * Options:
+ * m - output monomer correlations*
+ * c - output frequency of occurrences of each vertex occupation number*
+ * d - output monomer dimer correlations*
+ * t - output trimer correlations*
+ * e - output energy*
+ * o - output order parameters*
+ * h - output energy line by line
+ * w - output winding numbers line by line
+ *
+ * D - instead simulate dimers on a square lattice
+ * H - instead simulate dimers on a hexagonal lattice
+ *
+ * I - set U=infinity
+ * B - use only ideal brick wall configurations
+ * 3 - use only ideal rt3 configurations
+ * M - use naive metropolis algorithm
+ * A - use adaptive parallel tempering
+ * 		for parallel tempering, Temperature parameter can be input as MinTemp:NumChains:MaxTemp
+ * R - initialize the configuration randomly instead of from an ordered state
+ * T - slowly heat
+ * N - slowly anneal
+ * C - perform a multicanonical simulation
+ *
+ * *Output format (see https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm):
+ * [Number of observations taken]
+ * [List of means] [List of M2]
+ *
+ *
+ * typical parameters:
+ *
+ * ./pocket 48 1 0 0.25 100000000 20 emt 40000 output/
+ * 48x48 simulation with one vacancy, T/U=0.25, J4/U=0
+ * N=1e8
+ * record energy, monomer and trimer correlations
+ *
+ * ./pocket 24 1 0.4 0.02:16:0.12 40000000 20 oAR 40000 output
+ * parallel tempering 24x24 with 16 chains between T=0.02 and 0.12
+ * J4/U=0.4
+ * output order parameters and start with a random initial configuration
+ */
+
 #include <atomic>
 #include <chrono>
 #include <complex>
