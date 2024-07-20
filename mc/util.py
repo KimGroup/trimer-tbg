@@ -418,7 +418,7 @@ def show_worms(ax, positions, w, h):
     print(" ".join(str(("RGB"[loop["color"]], loop["wx"], loop["wy"])) for loop in loops))
 
 
-def show_positions(ax, positions, type="worm", show_monomers=False, color="black", height=None, width=None, draw_triangular_lattice=True):
+def show_positions(ax, positions, type="worm", show_monomers=False, color="black", length=None, height=None, width=None, draw_triangular_lattice=True):
     def to_rgba(hex, alpha):
         return ((hex >> 16) / 256, ((hex >> 8) & 0xFF) / 256, (hex & 0xFF) / 256, alpha)
 
@@ -429,6 +429,10 @@ def show_positions(ax, positions, type="worm", show_monomers=False, color="black
     color5 = 0x9c78fa
     color6 = 0x4db2f1
     colors = [color1, color2, color3, color4, color5, color6]
+
+    if length is not None:
+        width = length
+        height= length
 
     if width is None:
         width = max(x for x, y, s in positions)+1
