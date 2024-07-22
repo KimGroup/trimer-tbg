@@ -168,7 +168,7 @@ def draw_hexalattice(ax, width, height, color=None, ls="-"):
         [(vertices[x], vertices[y]) for x, y in lines], color=color, lw=1, ls=ls, zorder=0.5))
 
 
-def draw_duallattice(ax, width, height, color=None, ls="-"):
+def draw_duallattice(ax, width, height, color=None, ls="-", zorder=-0.5):
     if color is None:
         color = "black"
 
@@ -179,16 +179,16 @@ def draw_duallattice(ax, width, height, color=None, ls="-"):
             xy = trimer_coords(x, y, 1)
             xy = (xy[0] - R * np.sqrt(3) / 2, xy[1] + R / 2)
             ax.add_patch(mpatches.RegularPolygon(xy, numVertices=6, radius=R,
-                         zorder=-0.5, lw=1, fill=False, edgecolor=color, ls=ls))
+                         zorder=zorder, lw=1, fill=False, edgecolor=color, ls=ls))
 
     xy = trimer_coords(0, 0, 1)
     xy = (xy[0] - R * np.sqrt(3) / 2, xy[1] + R / 2)
     ax.plot([xy[0] + R*np.sqrt(3)/2, xy[0] + R*np.sqrt(3)],
-            [xy[1] + R/2, xy[1] + R], color=color, lw=1, zorder=-0.5)
+            [xy[1] + R/2, xy[1] + R], color=color, lw=1, zorder=zorder)
     xy = trimer_coords(width - 1, height - 1, 1)
     xy = (xy[0] - R * np.sqrt(3) / 2, xy[1] + R / 2)
     ax.plot([xy[0] + R*np.sqrt(3)/2, xy[0] + R*np.sqrt(3)],
-            [xy[1] + R/2, xy[1] + R], color=color, lw=1, zorder=-0.5)
+            [xy[1] + R/2, xy[1] + R], color=color, lw=1, zorder=zorder)
 
 
 def enum_starofdavid(mono_pos, w, h):

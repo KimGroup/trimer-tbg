@@ -85,11 +85,11 @@ def gen_occ(l):
 
 
 def rand_symmetry():
-    match random.choice(["R"]):
-        case "T":
-            return ("T", (random.randrange(2), random.randrange(2), random.randrange(2)))
-        case "R":
-            return ("R", (random.randrange(width), random.randrange(height), random.randrange(6)))
+    rc = random.choice("R")
+    if rc == "T":
+        return ("T", (random.randrange(2), random.randrange(2), random.randrange(2)))
+    elif rc == "R":
+        return ("R", (random.randrange(width), random.randrange(height), random.randrange(6)))
 
 
 def recenter_tri(pos):
@@ -116,47 +116,47 @@ def center_mono(c, pos):
     return r[0]-width//2, r[1]-height//2
 
 def apply_symmetry(sym, pos):
-    match sym:
-        case("T", (dx, dy, ds)):
-            return recenter_tri((pos[0] + dx + (pos[2] + ds) // 2, pos[1] + dy, (pos[2] + ds) % 2))
-        case("R", (cx, cy, dir)):
-            px, py, ps = recenter_tri(
-                (pos[0] - cx + width//2, pos[1] - cy + height//2, pos[2]))
+    if sym[0] == "T":
+        dx, dy, ds = sym[1]
+        return recenter_tri((pos[0] + dx + (pos[2] + ds) // 2, pos[1] + dy, (pos[2] + ds) % 2))
+    elif sym[0] == "R":
+        cx, cy, dir = sym[1]
+        px, py, ps = recenter_tri(
+            (pos[0] - cx + width//2, pos[1] - cy + height//2, pos[2]))
 
-            px -= width//2
-            py -= height//2
+        px -= width//2
+        py -= height//2
 
-            match dir:
-                case 0:  # X axis
-                    if ps == 0:
-                        return recenter_tri((cx+px+py, cy-py-1, 1))
-                    else:
-                        return recenter_tri((cx+px+py+1, cy-py-1, 0))
-                case 1:  # Y axis
-                    if ps == 0:
-                        return recenter_tri((cx-px-1, cy+py+px, 1))
-                    else:
-                        return recenter_tri((cx-px-1, cy+py+px+1, 0))
-                case 2:  # X+Y axis
-                    if ps == 0:
-                        return recenter_tri((cx-py-1, cy-px-1, 1))
-                    else:
-                        return recenter_tri((cx-py-1, cy-px-1, 0))
-                case 3: # X' axis
-                    if ps == 0:
-                        return recenter_tri((cx-px-1-py, cy+py, 0))
-                    else:
-                        return recenter_tri((cx-px-2-py, cy+py, 1))
-                case 4: # Y' axis
-                    if ps == 0:
-                        return recenter_tri((cx+px, cy-py-1-px, 0))
-                    else:
-                        return recenter_tri((cx+px, cy-py-2-px, 1))
-                case 5: # X' + Y' axis
-                    if ps == 0:
-                        return recenter_tri((cx+py, cy+px, 0))
-                    else:
-                        return recenter_tri((cx+py, cy+px, 1))
+        if dir == 0:  # X axis
+            if ps == 0:
+                return recenter_tri((cx+px+py, cy-py-1, 1))
+            else:
+                return recenter_tri((cx+px+py+1, cy-py-1, 0))
+        elif dir == 1:  # Y axis
+            if ps == 0:
+                return recenter_tri((cx-px-1, cy+py+px, 1))
+            else:
+                return recenter_tri((cx-px-1, cy+py+px+1, 0))
+        elif dir == 2:  # X+Y axis
+            if ps == 0:
+                return recenter_tri((cx-py-1, cy-px-1, 1))
+            else:
+                return recenter_tri((cx-py-1, cy-px-1, 0))
+        elif dir == 3: # X' axis
+            if ps == 0:
+                return recenter_tri((cx-px-1-py, cy+py, 0))
+            else:
+                return recenter_tri((cx-px-2-py, cy+py, 1))
+        elif dir == 4: # Y' axis
+            if ps == 0:
+                return recenter_tri((cx+px, cy-py-1-px, 0))
+            else:
+                return recenter_tri((cx+px, cy-py-2-px, 1))
+        elif dir == 5: # X' + Y' axis
+            if ps == 0:
+                return recenter_tri((cx+py, cy+px, 0))
+            else:
+                return recenter_tri((cx+py, cy+px, 1))
     return pos
 
 def mask_above(row):
@@ -194,13 +194,13 @@ def shape_of(mask):
     return len(mask), ret
 
 def rotate(pos, dir):
-    match dir % 6:
-        case 0: return pos
-        case 1: return (-pos[1], pos[0]+pos[1])
-        case 2: return (-pos[0]-pos[1], pos[0])
-        case 3: return (-pos[0], -pos[1])
-        case 4: return (pos[1], -pos[0]-pos[1])
-        case 5: return (pos[0]+pos[1], -pos[0])
+    dir = dir % 6
+    if dir == 0: return pos
+    if dir == 1: return (-pos[1], pos[0]+pos[1])
+    if dir == 2: return (-pos[0]-pos[1], pos[0])
+    if dir == 3: return (-pos[0], -pos[1])
+    if dir == 4: return (pos[1], -pos[0]-pos[1])
+    if dir == 5: return (pos[0]+pos[1], -pos[0])
 
 
 def advance(shape, prev):
